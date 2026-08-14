@@ -18,7 +18,7 @@
 
   var TRANSFORM_LOOP_MS      = 2100; // 中央へ渦を巻きながら移動する時間
   var TRANSFORM_LOOPS        = 2.5;  // ぐるっと回る周回数
-  var TRANSFORM_CROSSFADE_MS = 3800; // 光がアイテムへ変化しきるまでの時間(演出内容は変えず、ここを伸ばしてゆっくりに)
+  var TRANSFORM_CROSSFADE_MS = 3300; // 光がアイテムへ変化しきるまでの時間(演出内容は変えず、ここを伸ばしてゆっくりに)
   var DISSOLVE_PARTICLE_COUNT = 700; // 光が分散する細かい粒子の数
   var ITEM_DISPLAY_HEIGHT    = 420;  // アイテム画像の表示高さ(CSS px)
   var ITEM_HIT_RADIUS        = 170;  // アイテムにタップで触れたと判定する半径(px)
