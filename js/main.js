@@ -3,11 +3,13 @@
 
   // ---- 設定値 ----
   var SCHEDULE_DELAY_MS = 3000;   // ダブルタップ認識から発動までの待機
-  var ORB_LIFETIME_MS   = 5300;   // 光球が出てから消えるまでの合計時間(飛び込み含む)
-  var CONVERGE_START_T  = 0.62;   // このタイミング(0-1)から中央収束を開始
   var DOUBLE_TAP_MAX_INTERVAL = 300; // ダブルタップとみなす最大間隔(ms)
   var TAP_MAX_DURATION  = 250;    // タップとみなす最大接触時間(ms) これを超えたら長押し扱い
   var TAP_MAX_MOVEMENT  = 18;     // タップとみなす最大移動量(px) これを超えたらスワイプ扱い
+  var ORB_HIT_RADIUS    = 70;     // 光球にタップで触れたと判定する半径(px)
+  var BOUNDARY_MARGIN   = 120;    // 画面端からこの距離より内側に留めるソフト境界
+  var BURST_PHASE_MS    = 550;    // 飛び込みの勢いを残す時間
+  var TILT_STRENGTH     = 20;     // 端末の傾き1度あたりの加速度の強さ
 
   var canvas = document.getElementById('stage');
   var ctx = canvas.getContext('2d');
@@ -27,12 +29,39 @@
   window.addEventListener('orientationchange', resize);
   resize();
 
+  function rand(a, b) { return a + Math.random() * (b - a); }
+
   // ---- 状態管理 ----
-  // 'idle' | 'waiting'(3秒待機中) | 'playing'(光球アニメ中)
+  // 'idle' | 'waiting'(3秒待機中) | 'active'(光球が画面内に存在)
   var state = 'idle';
   var orb = null;
+  var sparkles = [];
 
-  // ---- ダブルタップ検出(誤作動防止つき) ----
+  // ---- 端末の傾き(ジャイロ)----
+  var tiltAX = 0, tiltAY = 0;
+  var tiltRequested = false;
+
+  function onOrientation(e) {
+    if (e.beta === null || e.gamma === null) return;
+    // gamma: 左右の傾き(-90〜90) / beta: 縦持ち時の前後の傾き(90が自然な直立)
+    tiltAX = Math.max(-35, Math.min(35, e.gamma));
+    tiltAY = Math.max(-35, Math.min(35, e.beta - 90));
+  }
+
+  function enableTilt() {
+    if (tiltRequested) return;
+    tiltRequested = true;
+    if (typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission().then(function (res) {
+        if (res === 'granted') window.addEventListener('deviceorientation', onOrientation);
+      }).catch(function () {});
+    } else {
+      window.addEventListener('deviceorientation', onOrientation);
+    }
+  }
+
+  // ---- タップ検出(誤作動防止つき) ----
   var lastTapTime = 0;
   var activePointerId = null;
   var pointerStartX = 0, pointerStartY = 0, pointerStartT = 0;
@@ -76,14 +105,7 @@
       return;
     }
 
-    var now = performance.now();
-    if (lastTapTime !== 0 && (now - lastTapTime) <= DOUBLE_TAP_MAX_INTERVAL) {
-      // ダブルタップ成立
-      lastTapTime = 0;
-      onDoubleTap();
-    } else {
-      lastTapTime = now;
-    }
+    handleTap(e.clientX, e.clientY, performance.now());
   }
 
   function onPointerCancel(e) {
@@ -100,100 +122,153 @@
   canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
 
-  function onDoubleTap() {
-    if (state !== 'idle') return; // 待機中・再生中は無視(見た目上の変化は起こさない)
-    state = 'waiting';
-    setTimeout(function () {
-      if (state !== 'waiting') return;
-      spawnOrb();
-      state = 'playing';
-    }, SCHEDULE_DELAY_MS);
-  }
-
-  // ---- 光球の物理・見た目 ----
-  function rand(a, b) { return a + Math.random() * (b - a); }
-
-  function spawnOrb() {
-    var margin = 70;
-    var edge = Math.floor(Math.random() * 4); // 0:左 1:右 2:上 3:下
-    var x, y;
-    if (edge === 0) { x = -margin; y = rand(H * 0.15, H * 0.85); }
-    else if (edge === 1) { x = W + margin; y = rand(H * 0.15, H * 0.85); }
-    else if (edge === 2) { x = rand(W * 0.15, W * 0.85); y = -margin; }
-    else { x = rand(W * 0.15, W * 0.85); y = H + margin; }
-
-    // 画面内のどこか(中心付近ではないランダムな一点)へ勢いよく飛び込む初速
-    var targetX = rand(W * 0.28, W * 0.72);
-    var targetY = rand(H * 0.28, H * 0.72);
-    var dx = targetX - x, dy = targetY - y;
-    var dist = Math.hypot(dx, dy) || 1;
-    var speed = rand(1500, 1900); // px/s の初速(勢いよく飛び込む)
-
-    orb = {
-      x: x, y: y,
-      vx: (dx / dist) * speed,
-      vy: (dy / dist) * speed,
-      spawnTime: performance.now(),
-      nextWanderAt: 0,
-      wanderAngle: Math.atan2(dy, dx),
-      flickerSeed: Math.random() * 1000,
-      spikeAngleOffset: rand(0, Math.PI / 4)
-    };
-  }
-
-  function updateOrb(now, dt) {
-    var elapsed = now - orb.spawnTime;
-    var t = elapsed / ORB_LIFETIME_MS;
-    if (t >= 1) {
-      orb = null;
-      state = 'idle';
+  function handleTap(x, y, now) {
+    if (state === 'active') {
+      // 光球そのものに触れた場合のみカットアウトで消す
+      if (orb && Math.hypot(x - orb.x, y - orb.y) <= ORB_HIT_RADIUS) {
+        cutOutOrb();
+      }
+      lastTapTime = 0;
       return;
     }
 
+    if (state !== 'idle') { lastTapTime = 0; return; } // 待機中は一切無視
+
+    if (lastTapTime !== 0 && (now - lastTapTime) <= DOUBLE_TAP_MAX_INTERVAL) {
+      // ダブルタップ成立(このタップ位置から光が入る)
+      lastTapTime = 0;
+      onDoubleTap(x, y);
+    } else {
+      lastTapTime = now;
+    }
+  }
+
+  function onDoubleTap(x, y) {
+    enableTilt(); // ユーザー操作の中で呼ぶ必要があるためここで許可を求める
+    state = 'waiting';
+    setTimeout(function () {
+      if (state !== 'waiting') return;
+      spawnOrb(x, y);
+      state = 'active';
+    }, SCHEDULE_DELAY_MS);
+  }
+
+  function cutOutOrb() {
+    orb = null;
+    sparkles.length = 0;
+    state = 'idle';
+  }
+
+  // ---- キラキラ粒子 ----
+  function addSparkle(x, y, vx, vy, life) {
+    sparkles.push({ x: x, y: y, vx: vx, vy: vy, born: performance.now(), life: life, size: rand(1.4, 3.2) });
+  }
+
+  function spawnBurstSparkles(x, y) {
+    var n = 26;
+    for (var i = 0; i < n; i++) {
+      var a = rand(0, Math.PI * 2);
+      var sp = rand(60, 320);
+      addSparkle(x, y, Math.cos(a) * sp, Math.sin(a) * sp, rand(400, 900));
+    }
+  }
+
+  function updateSparkles(now, dt) {
+    for (var i = sparkles.length - 1; i >= 0; i--) {
+      var s = sparkles[i];
+      if (now - s.born >= s.life) { sparkles.splice(i, 1); continue; }
+      s.vx *= (1 - Math.min(1, dt * 1.5));
+      s.vy *= (1 - Math.min(1, dt * 1.5));
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+    }
+  }
+
+  function drawSparkle(s, now) {
+    var t = (now - s.born) / s.life;
+    if (t >= 1) return;
+    var alpha = (1 - t) * (1 - t); // ふんわり減衰(イーズアウト)
+    var r = s.size * 4;
+    var g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r);
+    g.addColorStop(0, 'rgba(255,255,255,' + (0.9 * alpha) + ')');
+    g.addColorStop(0.4, 'rgba(190,220,255,' + (0.5 * alpha) + ')');
+    g.addColorStop(1, 'rgba(190,220,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // ---- 光球の物理 ----
+  function spawnOrb(x, y) {
+    var angle = -Math.PI / 2 + rand(-0.3, 0.3); // ほぼ画面の上方向へ
+    var speed = rand(1500, 1900); // 勢いよく投げ込む初速
+    orb = {
+      x: x, y: y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      bornAt: performance.now(),
+      nextWanderAt: 0,
+      wanderAngle: angle,
+      flickerSeed: Math.random() * 1000,
+      spikeAngleOffset: rand(0, Math.PI / 4)
+    };
+    spawnBurstSparkles(x, y);
+  }
+
+  function updateOrb(now, dt) {
+    var elapsed = now - orb.bornAt;
     var curAngle = Math.atan2(orb.vy, orb.vx);
     var speed = Math.hypot(orb.vx, orb.vy);
 
-    // 一定間隔で「ふわっと」方向を揺らす目標角度を更新(有機的な漂い)
-    if (now > orb.nextWanderAt) {
-      orb.wanderAngle = curAngle + rand(-1.3, 1.3);
-      orb.nextWanderAt = now + rand(450, 900);
-    }
+    if (elapsed < BURST_PHASE_MS) {
+      // 投げ込んだ勢いを残しながら自然に失速
+      speed *= Math.max(0, 1 - dt * 2.0);
+      orb.vx = Math.cos(curAngle) * speed;
+      orb.vy = Math.sin(curAngle) * speed;
+    } else {
+      // 有機的な漂い + 端末の傾きに追従
+      if (now > orb.nextWanderAt) {
+        orb.wanderAngle = curAngle + rand(-1.2, 1.2);
+        orb.nextWanderAt = now + rand(500, 1000);
+      }
+      var diff = orb.wanderAngle - curAngle;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      curAngle += diff * Math.min(1, dt * 1.6);
 
-    // 角度をなめらかに目標へ寄せる(慣性を感じる動き)
-    var diff = orb.wanderAngle - curAngle;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    curAngle += diff * Math.min(1, dt * 1.8);
+      var wanderSpeed = rand(50, 85);
+      speed += (wanderSpeed - speed) * Math.min(1, dt * 1.1);
 
-    // 速度は徐々に「漂う速さ」へ減衰し、勢いを自然に残しながら失速していく
-    var wanderSpeed = rand(70, 110);
-    var speedBlend = Math.min(1, dt * 1.1);
-    speed += (wanderSpeed - speed) * speedBlend;
+      orb.vx = Math.cos(curAngle) * speed;
+      orb.vy = Math.sin(curAngle) * speed;
 
-    orb.vx = Math.cos(curAngle) * speed;
-    orb.vy = Math.sin(curAngle) * speed;
+      orb.vx += tiltAX * TILT_STRENGTH * dt;
+      orb.vy += tiltAY * TILT_STRENGTH * dt;
 
-    // ソフトな画面端の反発(漂い中に画面外へ出過ぎないように)
-    var margin = 90;
-    if (orb.x < margin) orb.vx += (margin - orb.x) * 6 * dt;
-    if (orb.x > W - margin) orb.vx -= (orb.x - (W - margin)) * 6 * dt;
-    if (orb.y < margin) orb.vy += (margin - orb.y) * 6 * dt;
-    if (orb.y > H - margin) orb.vy -= (orb.y - (H - margin)) * 6 * dt;
-
-    // 終盤は中央へゆるやかに収束
-    if (t > CONVERGE_START_T) {
-      var ct = (t - CONVERGE_START_T) / (1 - CONVERGE_START_T); // 0-1
-      var cx = W / 2, cy = H / 2;
-      var pull = ct * ct * 3.2;
-      orb.vx += (cx - orb.x) * pull * dt;
-      orb.vy += (cy - orb.y) * pull * dt;
-      var damp = 1 - Math.min(0.9, ct * dt * 2.5);
+      var damp = Math.max(0, 1 - 1.4 * dt);
       orb.vx *= damp;
       orb.vy *= damp;
     }
 
+    // ソフトな画面端の反発(常に画面内に留める)
+    var m = BOUNDARY_MARGIN;
+    if (orb.x < m) orb.vx += (m - orb.x) * 8 * dt;
+    if (orb.x > W - m) orb.vx -= (orb.x - (W - m)) * 8 * dt;
+    if (orb.y < m) orb.vy += (m - orb.y) * 8 * dt;
+    if (orb.y > H - m) orb.vy -= (orb.y - (H - m)) * 8 * dt;
+
     orb.x += orb.vx * dt;
     orb.y += orb.vy * dt;
+
+    // 保険としてのハードクランプ(絶対に画面外へ出さない)
+    var hardM = m * 0.5;
+    orb.x = Math.max(hardM, Math.min(W - hardM, orb.x));
+    orb.y = Math.max(hardM, Math.min(H - hardM, orb.y));
+
+    // 軌跡に沿ってキラキラを残す(速度が出ているほど多く発生)
+    var sp = Math.hypot(orb.vx, orb.vy);
+    if (Math.random() < Math.min(0.85, sp / 700)) {
+      addSparkle(orb.x, orb.y, -orb.vx * 0.06 + rand(-25, 25), -orb.vy * 0.06 + rand(-25, 25), rand(300, 600));
+    }
   }
 
   function drawSpike(x, y, angle, length, width, alpha) {
@@ -219,36 +294,39 @@
   function drawOrb(now) {
     var x = orb.x, y = orb.y;
     var flicker = 0.92 + 0.08 * Math.sin(now / 90 + orb.flickerSeed);
+    var pulse = 1 + 0.05 * Math.sin(now / 260 + orb.flickerSeed);
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
 
     // 外側のやわらかい青白いグロー(大きくぼかす)
-    ctx.filter = 'blur(26px)';
-    var g1 = ctx.createRadialGradient(x, y, 0, x, y, 95);
-    g1.addColorStop(0, 'rgba(130,180,255,' + 0.5 * flicker + ')');
+    ctx.filter = 'blur(28px)';
+    var r1 = 100 * pulse;
+    var g1 = ctx.createRadialGradient(x, y, 0, x, y, r1);
+    g1.addColorStop(0, 'rgba(130,180,255,' + 0.55 * flicker + ')');
     g1.addColorStop(1, 'rgba(130,180,255,0)');
     ctx.fillStyle = g1;
-    ctx.beginPath(); ctx.arc(x, y, 95, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, r1, 0, Math.PI * 2); ctx.fill();
 
     // 中間のグロー
     ctx.filter = 'blur(10px)';
-    var g2 = ctx.createRadialGradient(x, y, 0, x, y, 42);
-    g2.addColorStop(0, 'rgba(205,228,255,' + 0.85 * flicker + ')');
+    var g2 = ctx.createRadialGradient(x, y, 0, x, y, 44);
+    g2.addColorStop(0, 'rgba(205,228,255,' + 0.88 * flicker + ')');
     g2.addColorStop(1, 'rgba(205,228,255,0)');
     ctx.fillStyle = g2;
-    ctx.beginPath(); ctx.arc(x, y, 42, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, 44, 0, Math.PI * 2); ctx.fill();
 
-    // 星形・十字状の光芒(4方向 + 斜め4方向、長さをずらして自然に)
+    // 星形・十字状の光芒(6方向 + 斜め6方向で華やかに)
     ctx.filter = 'blur(1.5px)';
-    var baseAngle = orb.spikeAngleOffset;
-    var mainLen = 46 * flicker;
-    var subLen = 24 * flicker;
-    for (var i = 0; i < 4; i++) {
-      drawSpike(x, y, baseAngle + (Math.PI / 2) * i, mainLen, 2.4, 1);
+    var baseAngle = orb.spikeAngleOffset + now * 0.00006; // ごくゆっくり回転して華やかさを出す
+    var mainLen = 50 * flicker;
+    var subLen = 26 * flicker;
+    var mainCount = 6, subCount = 6;
+    for (var i = 0; i < mainCount; i++) {
+      drawSpike(x, y, baseAngle + (Math.PI * 2 / mainCount) * i, mainLen, 2.2, 1);
     }
-    for (var j = 0; j < 4; j++) {
-      drawSpike(x, y, baseAngle + Math.PI / 4 + (Math.PI / 2) * j, subLen, 1.6, 0.6);
+    for (var j = 0; j < subCount; j++) {
+      drawSpike(x, y, baseAngle + (Math.PI / subCount) + (Math.PI * 2 / subCount) * j, subLen, 1.4, 0.55);
     }
 
     // 中心の白飛びコア(ほぼぼかさない)
@@ -274,9 +352,19 @@
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
 
-    if (state === 'playing' && orb) {
+    if (state === 'active' && orb) {
       updateOrb(now, dt);
-      if (orb) drawOrb(now); // updateOrb内で寿命終了時にorb=nullになる(カットアウト)
+    }
+    updateSparkles(now, dt);
+
+    if (sparkles.length) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (var i = 0; i < sparkles.length; i++) drawSparkle(sparkles[i], now);
+      ctx.restore();
+    }
+    if (state === 'active' && orb) {
+      drawOrb(now);
     }
 
     requestAnimationFrame(frame);
