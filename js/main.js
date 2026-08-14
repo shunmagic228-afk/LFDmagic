@@ -3,8 +3,8 @@
 
   // ---- 設定値 ----
   var DOUBLE_TAP_MAX_INTERVAL = 300; // ダブルタップとみなす最大間隔(ms)
-  var TAP_MAX_DURATION  = 250;    // タップとみなす最大接触時間(ms) これを超えたら長押し扱い
-  var TAP_MAX_MOVEMENT  = 18;     // タップとみなす最大移動量(px) これを超えたらスワイプ扱い
+  var TAP_MAX_DURATION  = 380;    // タップとみなす最大接触時間(ms) これを超えたら長押し扱い
+  var TAP_MAX_MOVEMENT  = 28;     // タップとみなす最大移動量(px) これを超えたらスワイプ扱い
   var ORB_HIT_RADIUS    = 70;     // 光球にタップで触れたと判定する半径(px)
   var BOUNDARY_MARGIN   = 90;     // 画面端からこの距離より内側に留めるソフト境界
   var BURST_PHASE_MS    = 550;    // 飛び込みの勢いを残す時間
@@ -26,7 +26,7 @@
   var REVEAL_GROW_MS         = 320;  // 粒子が着地してから、その場に画像が浮かび上がるまでの時間
   var REVEAL_RADIUS          = 11;   // 1粒子あたりが画像を写し出す半径(px)。粒子数を増やした分さらに小さくして繊細に
 
-  var ITEM_EXIT_DELAY_MS = 1000; // アイテムをタップしてから退場を始めるまでの間
+  var ITEM_EXIT_DELAY_MS = 2000; // アイテムをタップしてから退場を始めるまでの間
   var ITEM_EXIT_SLIDE_MS = 1350; // 画面外へ滑り落ちるまでの時間
 
   var CORNER_SIZE = 90;              // 画面右下のリセット判定エリアの一辺(px)
