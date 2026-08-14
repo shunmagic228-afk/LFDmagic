@@ -17,8 +17,8 @@
   var TRAIL_FADE_ALPHA = 0.15; // 光球が存在する間、画面を完全な黒ではなく薄い黒で塗って光跡を残す
 
   var TRANSFORM_LOOP_MS      = 2100; // 中央へ渦を巻きながら移動する時間
-  var TRANSFORM_LOOPS        = 1.15; // ぐるっと回る周回数
-  var TRANSFORM_CROSSFADE_MS = 2100; // 光がアイテムへ変化しきるまでの時間(速度の印象は維持)
+  var TRANSFORM_LOOPS        = 2.5;  // ぐるっと回る周回数
+  var TRANSFORM_CROSSFADE_MS = 2900; // 光がアイテムへ変化しきるまでの時間(演出内容は変えず、ここを伸ばしてゆっくりに)
   var DISSOLVE_PARTICLE_COUNT = 320; // 光が分散する細かい粒子の数
   var ITEM_DISPLAY_HEIGHT    = 420;  // アイテム画像の表示高さ(CSS px)
   var ITEM_HIT_RADIUS        = 170;  // アイテムにタップで触れたと判定する半径(px)
@@ -26,10 +26,11 @@
   var REVEAL_GROW_MS         = 320;  // 粒子が着地してから、その場に画像が浮かび上がるまでの時間
   var REVEAL_RADIUS          = 15;   // 1粒子あたりが画像を写し出す半径(px)。小さめにして繊細な粒立ちを保つ
 
-  var ITEM_EXIT_DELAY_MS = 500;  // アイテムをタップしてから退場を始めるまでの間
+  var ITEM_EXIT_DELAY_MS = 1000; // アイテムをタップしてから退場を始めるまでの間
   var ITEM_EXIT_SLIDE_MS = 1350; // 画面外へ滑り落ちるまでの時間
 
-  var CORNER_SIZE = 90; // 画面右下のリセット判定エリアの一辺(px)
+  var CORNER_SIZE = 90;              // 画面右下のリセット判定エリアの一辺(px)
+  var CORNER_TRIPLE_WINDOW_MS = 700; // この時間内に3回タップされたらリセット
 
   function getItemRestY() { return H * ITEM_REST_Y_RATIO; }
 
@@ -170,7 +171,7 @@
 
   // ---- タップ検出(誤作動防止つき) ----
   var lastTapTime = 0;
-  var lastCornerTapTime = 0; // 画面右下角への連続タップ(実験用リセット、アイテム出現後のみ有効)
+  var cornerTapTimes = []; // 画面右下角への連続タップ(3回でリセット。アイテム出現後のみ有効)
   var activePointerId = null;
   var pointerStartX = 0, pointerStartY = 0, pointerStartT = 0;
   var pointerMoved = false;
@@ -281,13 +282,15 @@
     }
 
     if (state === 'item') {
-      // 実験用: 画面右下角への「ダブルタップ」でリセット(アイテム出現後のみ有効な隠しコマンド)
+      // 実験用: 画面右下角への「トリプルタップ」でリセット(アイテム出現後のみ有効な隠しコマンド)
       if (x > W - CORNER_SIZE && y > H - CORNER_SIZE) {
-        if (lastCornerTapTime !== 0 && (now - lastCornerTapTime) <= DOUBLE_TAP_MAX_INTERVAL) {
-          lastCornerTapTime = 0;
+        cornerTapTimes.push(now);
+        while (cornerTapTimes.length && now - cornerTapTimes[0] > CORNER_TRIPLE_WINDOW_MS) {
+          cornerTapTimes.shift();
+        }
+        if (cornerTapTimes.length >= 3) {
+          cornerTapTimes.length = 0;
           resetAll();
-        } else {
-          lastCornerTapTime = now;
         }
         lastTapTime = 0;
         return;
@@ -358,7 +361,7 @@
     draggingOrb = false;
     orbTouchCandidate = false;
     lastTapTime = 0;
-    lastCornerTapTime = 0;
+    cornerTapTimes.length = 0;
     state = 'idle';
   }
 
