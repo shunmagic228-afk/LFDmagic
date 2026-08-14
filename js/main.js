@@ -9,10 +9,10 @@
   var BOUNDARY_MARGIN   = 90;     // 画面端からこの距離より内側に留めるソフト境界
   var BURST_PHASE_MS    = 550;    // 飛び込みの勢いを残す時間
 
-  var TILT_STRENGTH  = 26;   // 傾き1度あたりの加速度の強さ(画面全体を動かす主動力)
-  var TILT_DRAG      = 1.0;  // 傾き反映後の速度減衰(大きいほど追従が機敏で止まりやすい)
-  var TILT_MAX_SPEED = 650;  // 傾きによる速度の上限(px/s、暴走防止)
-  var JITTER_MAG      = 26;  // ふわふわとした有機的な揺らぎの強さ
+  var TILT_STRENGTH  = 42;   // 傾き1度あたりの加速度の強さ(重力の強さ。画面全体を動かす主動力)
+  var TILT_DRAG      = 1.1;  // 傾き反映後の速度減衰(大きいほど追従が機敏で止まりやすい)
+  var TILT_MAX_SPEED = 760;  // 傾きによる速度の上限(px/s、暴走防止)
+  var JITTER_MAG      = 18;  // ふわふわとした有機的な揺らぎの強さ
 
   var TRAIL_FADE_ALPHA = 0.15; // 光球が存在する間、画面を完全な黒ではなく薄い黒で塗って光跡を残す
 
@@ -47,12 +47,29 @@
   // 必要で、Webアプリでは許可状態を恒久的に保存する手段がない(全サイト共通の制約)。
   var tiltAX = 0, tiltAY = 0;
   var tiltRequested = false;
+  var tiltBaseline = null; // その場で構えた持ち方を基準(ゼロ点)にする
+
+  function resetTiltBaseline() {
+    tiltBaseline = null;
+    tiltAX = 0;
+    tiltAY = 0;
+  }
 
   function onOrientation(e) {
     if (e.beta === null || e.gamma === null) return;
-    // gamma: 左右の傾き(-90〜90) / beta: 縦持ち時の前後の傾き(90が自然な直立)
-    tiltAX = Math.max(-35, Math.min(35, e.gamma));
-    tiltAY = Math.max(-35, Math.min(35, e.beta - 90));
+    // 人によって・その時の構え方によって自然に持つ角度は異なるため、
+    // 固定角度(90度)ではなく「今その瞬間に持っている角度」を基準として、
+    // そこからの変化分だけを傾きとして扱う。こうしないと、90度より
+    // 寝かせ気味に持っているだけで常に一方向へ力がかかり続けてしまう。
+    if (tiltBaseline === null) {
+      tiltBaseline = { beta: e.beta, gamma: e.gamma };
+    }
+    var dBeta = e.beta - tiltBaseline.beta;
+    var dGamma = e.gamma - tiltBaseline.gamma;
+    if (dBeta > 180) dBeta -= 360;
+    if (dBeta < -180) dBeta += 360;
+    tiltAX = Math.max(-35, Math.min(35, dGamma));
+    tiltAY = Math.max(-35, Math.min(35, dBeta));
   }
 
   function enableTilt() {
@@ -150,6 +167,7 @@
 
   function onDoubleTap(x, y) {
     enableTilt(); // ユーザー操作の中で呼ぶ必要があるためここで許可を求める
+    resetTiltBaseline(); // 今この瞬間に構えている持ち方を新しい基準にする
     spawnOrb(x, y);
     state = 'active';
   }
