@@ -19,7 +19,8 @@
   var TRIPLE_TAP_WINDOW_MS   = 700;  // この時間内に3回タップされたらアイテム化
   var TRANSFORM_LOOP_MS      = 1100; // 中央へ渦を巻きながら移動する時間
   var TRANSFORM_LOOPS        = 1.15; // ぐるっと回る周回数
-  var TRANSFORM_CROSSFADE_MS = 2100; // 光→アイテムへ「じわっと」変化しきるまでの時間
+  var TRANSFORM_CROSSFADE_MS = 2100; // 光がアイテムへ変化しきるまでの時間(速度の印象は維持)
+  var DISSOLVE_PARTICLE_COUNT = 260; // 光が分散する細かい粒子の数
   var ITEM_DISPLAY_HEIGHT    = 340;  // アイテム画像の表示高さ(CSS px)
   var ITEM_HIT_RADIUS        = 130;  // アイテムにタップで触れたと判定する半径(px)
   var ITEM_REST_Y_RATIO      = 0.42; // アイテムの定位置(画面高さに対する比率。中央よりやや上)
@@ -58,14 +59,58 @@
 
   var itemImg = new Image();
   var itemImgLoaded = false;
-  itemImg.onload = function () { itemImgLoaded = true; };
+  var itemSamplePoints = null; // アイテム画像の不透明部分から間引いた目標座標(表示中心からのオフセット)
+  itemImg.onload = function () {
+    itemImgLoaded = true;
+    buildItemSamplePoints();
+  };
   itemImg.src = 'img/item.png';
+
+  function buildItemSamplePoints() {
+    var ratio = itemImg.naturalWidth / itemImg.naturalHeight;
+    var sampleW = 90;
+    var sampleH = Math.max(1, Math.round(sampleW / ratio));
+    var off = document.createElement('canvas');
+    off.width = sampleW;
+    off.height = sampleH;
+    var octx = off.getContext('2d');
+    octx.drawImage(itemImg, 0, 0, sampleW, sampleH);
+    var data = octx.getImageData(0, 0, sampleW, sampleH).data;
+
+    var dispH = ITEM_DISPLAY_HEIGHT;
+    var dispW = dispH * ratio;
+    var pts = [];
+    for (var y = 0; y < sampleH; y++) {
+      for (var x = 0; x < sampleW; x++) {
+        var idx = (y * sampleW + x) * 4;
+        if (data[idx + 3] > 120) {
+          pts.push([(x / sampleW - 0.5) * dispW, (y / sampleH - 0.5) * dispH]);
+        }
+      }
+    }
+    itemSamplePoints = pts;
+  }
+
+  // 光の粒子を軽く描くための下地スプライト(毎フレームのグラデーション生成コストを避ける)
+  var particleSprite = document.createElement('canvas');
+  particleSprite.width = 32;
+  particleSprite.height = 32;
+  (function () {
+    var sctx = particleSprite.getContext('2d');
+    var g = sctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.35, 'rgba(210,230,255,0.85)');
+    g.addColorStop(1, 'rgba(210,230,255,0)');
+    sctx.fillStyle = g;
+    sctx.beginPath(); sctx.arc(16, 16, 16, 0, Math.PI * 2); sctx.fill();
+  })();
 
   // ---- 端末の傾き(ジャイロ)----
   // 注意: iOSの仕様上、モーションセンサーの許可はページの読み込みごとに
   // 必要で、Webアプリでは許可状態を恒久的に保存する手段がない(全サイト共通の制約)。
   var tiltAX = 0, tiltAY = 0;
-  var tiltRequested = false;
+  var tiltGranted = false;      // 許可が実際に下りたか
+  var tiltRequestInFlight = false;
   var tiltBaseline = null; // その場で構えた持ち方を基準(ゼロ点)にする
 
   function resetTiltBaseline() {
@@ -92,14 +137,23 @@
   }
 
   function enableTilt() {
-    if (tiltRequested) return;
-    tiltRequested = true;
+    // 許可がまだ下りていなければ、発射のたびに(=ユーザー操作のたびに)再挑戦する。
+    // 1回目のダイアログを見逃す/誤ってブロックしてしまった場合でも、次の発射で復帰できるようにするため。
+    if (tiltGranted || tiltRequestInFlight) return;
     if (typeof DeviceOrientationEvent !== 'undefined' &&
         typeof DeviceOrientationEvent.requestPermission === 'function') {
+      tiltRequestInFlight = true;
       DeviceOrientationEvent.requestPermission().then(function (res) {
-        if (res === 'granted') window.addEventListener('deviceorientation', onOrientation);
-      }).catch(function () {});
+        tiltRequestInFlight = false;
+        if (res === 'granted') {
+          tiltGranted = true;
+          window.addEventListener('deviceorientation', onOrientation);
+        }
+      }).catch(function () {
+        tiltRequestInFlight = false;
+      });
     } else {
+      tiltGranted = true;
       window.addEventListener('deviceorientation', onOrientation);
     }
   }
@@ -503,16 +557,15 @@
         addSparkle(orb.x, orb.y, rand(-40, 40), rand(-40, 40), rand(400, 900));
       }
     } else {
-      // じわっとしたクロスフェード: 光が魔法のようにアイテムへ変化していく
-      if (transformInfo.crossfadeStarted === null) transformInfo.crossfadeStarted = now;
+      // 光が超細かい粒子に分散し、それぞれがアイテムの形へ集まっていく
+      if (transformInfo.crossfadeStarted === null) {
+        transformInfo.crossfadeStarted = now;
+        buildDissolveParticles();
+      }
       orb.x = transformInfo.cx;
       orb.y = transformInfo.cy;
       var ct = Math.min(1, (now - transformInfo.crossfadeStarted) / TRANSFORM_CROSSFADE_MS);
       transformInfo.crossfadeT = ct;
-
-      if (Math.random() < 0.3 * (1 - ct)) {
-        addSparkle(transformInfo.cx + rand(-25, 25), transformInfo.cy + rand(-25, 25), rand(-20, 20), rand(-20, 20), rand(350, 700));
-      }
 
       if (ct >= 1) {
         item = { x: transformInfo.cx, y: getItemRestY(), bornAt: now };
@@ -523,47 +576,60 @@
     }
   }
 
-  // クロスフェードの進行度(0-1)から、光の残り具合・閃光の強さ・アイテムの出現具合を計算する
-  function getTransformVisuals(ct) {
-    var orbAlpha;
-    if (ct < 0.30) orbAlpha = 1;
-    else if (ct > 0.68) orbAlpha = 0;
-    else orbAlpha = 1 - (ct - 0.30) / 0.38;
+  // 光の到達点(画面中央)を起点に、アイテムのシルエットへ散らばりながら集まる粒子群を作る
+  function buildDissolveParticles() {
+    var restY = getItemRestY();
+    var pts = itemSamplePoints || [];
+    var n = Math.min(DISSOLVE_PARTICLE_COUNT, pts.length);
+    var idxs = [];
+    for (var k = 0; k < pts.length; k++) idxs.push(k);
+    for (var k2 = idxs.length - 1; k2 > 0; k2--) {
+      var j = Math.floor(Math.random() * (k2 + 1));
+      var tmp = idxs[k2]; idxs[k2] = idxs[j]; idxs[j] = tmp;
+    }
 
-    var flashD = (ct - 0.44) / 0.32;
-    var flashAlpha = Math.max(0, 1 - flashD * flashD);
-
-    var raw = Math.min(1, Math.max(0, (ct - 0.38) / 0.55));
-    var itemAlpha = raw * raw * (3 - 2 * raw); // smoothstep
-
-    return {
-      orbAlpha: orbAlpha,
-      flashAlpha: flashAlpha,
-      itemAlpha: itemAlpha,
-      itemScale: 0.72 + 0.28 * itemAlpha
-    };
+    var particles = [];
+    for (var i = 0; i < n; i++) {
+      var p = pts[idxs[i]];
+      var scatterAngle = rand(0, Math.PI * 2);
+      var scatterR = rand(20, 110);
+      particles.push({
+        sx: transformInfo.cx + Math.cos(scatterAngle) * scatterR,
+        sy: transformInfo.cy + Math.sin(scatterAngle) * scatterR,
+        tx: transformInfo.cx + p[0],
+        ty: restY + p[1],
+        tStart: rand(0, 0.32),
+        dur: rand(0.32, 0.5),
+        size: rand(5, 13)
+      });
+    }
+    transformInfo.particles = particles;
   }
 
-  function drawTransformFlash(cx, cy, alpha, now) {
-    if (alpha <= 0.001) return;
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.filter = 'blur(24px)';
-    var r = 55 + 230 * alpha;
-    var g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-    g.addColorStop(0, 'rgba(255,255,255,' + (0.92 * alpha) + ')');
-    g.addColorStop(0.35, 'rgba(205,228,255,' + (0.55 * alpha) + ')');
-    g.addColorStop(1, 'rgba(205,228,255,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
+  function easeOutCubic(x) { return 1 - Math.pow(1 - x, 3); }
+
+  // 粒子1個の、変化の進行度ct(0-1)における位置と不透明度
+  function getParticleState(p, ct) {
+    var localT = (ct - p.tStart) / p.dur;
+    if (localT <= 0) return { x: p.sx, y: p.sy, alpha: 0 };
+    if (localT >= 1) {
+      var settle = Math.min(1, (localT - 1) * 4); // 到着後すこしで個別にふっと消える
+      return { x: p.tx, y: p.ty, alpha: Math.max(0, 1 - settle) };
+    }
+    var e = easeOutCubic(localT);
+    return {
+      x: p.sx + (p.tx - p.sx) * e,
+      y: p.sy + (p.ty - p.sy) * e,
+      alpha: Math.min(1, localT * 4)
+    };
   }
 
   function updateItemFloating(now) {
     var t = (now - item.bornAt) / 1000;
-    // ゆっくり有機的に漂う(黒い空間に浮いている質感)
-    item.x = W / 2 + Math.sin(t * 0.55) * 16 + Math.sin(t * 1.3 + 1.1) * 6;
-    item.y = getItemRestY() + Math.sin(t * 0.4 + 0.7) * 12 + Math.sin(t * 1.1 + 2.0) * 5;
+    // アイテム出現の瞬間(t=0)は揺らぎゼロから始め、変化演出の最終位置と完全に一致させて段差を無くす
+    var floatEase = 1 - Math.exp(-t * 0.8);
+    item.x = W / 2 + floatEase * (Math.sin(t * 0.55) * 16 + Math.sin(t * 1.3 + 1.1) * 6);
+    item.y = getItemRestY() + floatEase * (Math.sin(t * 0.4 + 0.7) * 12 + Math.sin(t * 1.1 + 2.0) * 5);
   }
 
   function drawItem(x, y, alpha, scale, now) {
@@ -705,15 +771,35 @@
       drawOrb(now);
     } else if (state === 'transforming' && orb) {
       if (transformInfo && transformInfo.crossfadeT != null) {
-        var vis = getTransformVisuals(transformInfo.crossfadeT);
-        ctx.save();
-        ctx.globalAlpha = vis.orbAlpha;
-        drawOrb(now);
-        ctx.restore();
-        drawTransformFlash(transformInfo.cx, transformInfo.cy, vis.flashAlpha, now);
-        if (vis.itemAlpha > 0.001) {
-          var iy = transformInfo.cy + (getItemRestY() - transformInfo.cy) * vis.itemAlpha;
-          drawItem(transformInfo.cx, iy, vis.itemAlpha, vis.itemScale, now);
+        var ct = transformInfo.crossfadeT;
+
+        // 光は素早く分散していく(粒子が受け継ぐので長く残す必要はない)
+        var orbAlpha = Math.max(0, 1 - ct / 0.18);
+        if (orbAlpha > 0.001) {
+          ctx.save();
+          ctx.globalAlpha = orbAlpha;
+          drawOrb(now);
+          ctx.restore();
+        }
+
+        if (transformInfo.particles) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          var plist = transformInfo.particles;
+          for (var pi = 0; pi < plist.length; pi++) {
+            var ps = getParticleState(plist[pi], ct);
+            if (ps.alpha <= 0.01) continue;
+            var d = plist[pi].size;
+            ctx.globalAlpha = ps.alpha;
+            ctx.drawImage(particleSprite, ps.x - d, ps.y - d, d * 2, d * 2);
+          }
+          ctx.restore();
+        }
+
+        var rawImg = Math.min(1, Math.max(0, (ct - 0.70) / 0.27));
+        var itemAlpha = rawImg * rawImg * (3 - 2 * rawImg); // smoothstep
+        if (itemAlpha > 0.001) {
+          drawItem(transformInfo.cx, getItemRestY(), itemAlpha, 0.85 + 0.15 * itemAlpha, now);
         }
       } else {
         drawOrb(now);
