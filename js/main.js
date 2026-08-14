@@ -19,9 +19,14 @@
   var TRIPLE_TAP_WINDOW_MS   = 700;  // この時間内に3回タップされたらアイテム化
   var TRANSFORM_LOOP_MS      = 1100; // 中央へ渦を巻きながら移動する時間
   var TRANSFORM_LOOPS        = 1.15; // ぐるっと回る周回数
-  var TRANSFORM_CROSSFADE_MS = 650;  // 光→アイテムのふわっとしたクロスフェード時間
-  var ITEM_DISPLAY_HEIGHT    = 260;  // アイテム画像の表示高さ(CSS px)
-  var ITEM_HIT_RADIUS        = 110;  // アイテムにタップで触れたと判定する半径(px)
+  var TRANSFORM_CROSSFADE_MS = 2100; // 光→アイテムへ「じわっと」変化しきるまでの時間
+  var ITEM_DISPLAY_HEIGHT    = 340;  // アイテム画像の表示高さ(CSS px)
+  var ITEM_HIT_RADIUS        = 130;  // アイテムにタップで触れたと判定する半径(px)
+  var ITEM_REST_Y_RATIO      = 0.42; // アイテムの定位置(画面高さに対する比率。中央よりやや上)
+
+  var CORNER_SIZE = 90; // 画面右下のリセット判定エリアの一辺(px)
+
+  function getItemRestY() { return H * ITEM_REST_Y_RATIO; }
 
   var canvas = document.getElementById('stage');
   var ctx = canvas.getContext('2d');
@@ -102,6 +107,7 @@
   // ---- タップ検出(誤作動防止つき) ----
   var lastTapTime = 0;
   var tripleTapTimes = []; // 光球の外への連続タップ(3回でアイテム化)
+  var lastCornerTapTime = 0; // 画面右下角への連続タップ(実験用リセット、アイテム出現後のみ有効)
   var activePointerId = null;
   var pointerStartX = 0, pointerStartY = 0, pointerStartT = 0;
   var pointerMoved = false;
@@ -212,6 +218,18 @@
     }
 
     if (state === 'item') {
+      // 実験用: 画面右下角への「ダブルタップ」でリセット(アイテム出現後のみ有効な隠しコマンド)
+      if (x > W - CORNER_SIZE && y > H - CORNER_SIZE) {
+        if (lastCornerTapTime !== 0 && (now - lastCornerTapTime) <= DOUBLE_TAP_MAX_INTERVAL) {
+          lastCornerTapTime = 0;
+          resetAll();
+        } else {
+          lastCornerTapTime = now;
+        }
+        lastTapTime = 0;
+        return;
+      }
+
       // アイテムへの「ダブルタップ」でカットアウト
       if (item && Math.hypot(x - item.x, y - item.y) <= ITEM_HIT_RADIUS) {
         if (lastTapTime !== 0 && (now - lastTapTime) <= DOUBLE_TAP_MAX_INTERVAL) {
@@ -275,6 +293,20 @@
   function cutOutItem() {
     item = null;
     sparkles.length = 0;
+    state = 'idle';
+  }
+
+  // 実験用の全リセット(右下角ダブルタップ)
+  function resetAll() {
+    orb = null;
+    item = null;
+    transformInfo = null;
+    sparkles.length = 0;
+    draggingOrb = false;
+    orbTouchCandidate = false;
+    lastTapTime = 0;
+    tripleTapTimes.length = 0;
+    lastCornerTapTime = 0;
     state = 'idle';
   }
 
@@ -471,18 +503,19 @@
         addSparkle(orb.x, orb.y, rand(-40, 40), rand(-40, 40), rand(400, 900));
       }
     } else {
-      // ふわっとクロスフェード: 光が消えていき、アイテムが浮かび上がる
+      // じわっとしたクロスフェード: 光が魔法のようにアイテムへ変化していく
       if (transformInfo.crossfadeStarted === null) transformInfo.crossfadeStarted = now;
       orb.x = transformInfo.cx;
       orb.y = transformInfo.cy;
-      transformInfo.crossfadeT = Math.min(1, (now - transformInfo.crossfadeStarted) / TRANSFORM_CROSSFADE_MS);
+      var ct = Math.min(1, (now - transformInfo.crossfadeStarted) / TRANSFORM_CROSSFADE_MS);
+      transformInfo.crossfadeT = ct;
 
-      if (Math.random() < 0.35) {
-        addSparkle(orb.x + rand(-20, 20), orb.y + rand(-20, 20), rand(-25, 25), rand(-25, 25), rand(300, 650));
+      if (Math.random() < 0.3 * (1 - ct)) {
+        addSparkle(transformInfo.cx + rand(-25, 25), transformInfo.cy + rand(-25, 25), rand(-20, 20), rand(-20, 20), rand(350, 700));
       }
 
-      if (transformInfo.crossfadeT >= 1) {
-        item = { x: transformInfo.cx, y: transformInfo.cy, bornAt: now };
+      if (ct >= 1) {
+        item = { x: transformInfo.cx, y: getItemRestY(), bornAt: now };
         orb = null;
         transformInfo = null;
         state = 'item';
@@ -490,11 +523,47 @@
     }
   }
 
+  // クロスフェードの進行度(0-1)から、光の残り具合・閃光の強さ・アイテムの出現具合を計算する
+  function getTransformVisuals(ct) {
+    var orbAlpha;
+    if (ct < 0.30) orbAlpha = 1;
+    else if (ct > 0.68) orbAlpha = 0;
+    else orbAlpha = 1 - (ct - 0.30) / 0.38;
+
+    var flashD = (ct - 0.44) / 0.32;
+    var flashAlpha = Math.max(0, 1 - flashD * flashD);
+
+    var raw = Math.min(1, Math.max(0, (ct - 0.38) / 0.55));
+    var itemAlpha = raw * raw * (3 - 2 * raw); // smoothstep
+
+    return {
+      orbAlpha: orbAlpha,
+      flashAlpha: flashAlpha,
+      itemAlpha: itemAlpha,
+      itemScale: 0.72 + 0.28 * itemAlpha
+    };
+  }
+
+  function drawTransformFlash(cx, cy, alpha, now) {
+    if (alpha <= 0.001) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.filter = 'blur(24px)';
+    var r = 55 + 230 * alpha;
+    var g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0, 'rgba(255,255,255,' + (0.92 * alpha) + ')');
+    g.addColorStop(0.35, 'rgba(205,228,255,' + (0.55 * alpha) + ')');
+    g.addColorStop(1, 'rgba(205,228,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
   function updateItemFloating(now) {
     var t = (now - item.bornAt) / 1000;
     // ゆっくり有機的に漂う(黒い空間に浮いている質感)
     item.x = W / 2 + Math.sin(t * 0.55) * 16 + Math.sin(t * 1.3 + 1.1) * 6;
-    item.y = H / 2 + Math.sin(t * 0.4 + 0.7) * 12 + Math.sin(t * 1.1 + 2.0) * 5;
+    item.y = getItemRestY() + Math.sin(t * 0.4 + 0.7) * 12 + Math.sin(t * 1.1 + 2.0) * 5;
   }
 
   function drawItem(x, y, alpha, scale, now) {
@@ -635,14 +704,19 @@
     if (state === 'active' && orb) {
       drawOrb(now);
     } else if (state === 'transforming' && orb) {
-      var fadeAlpha = transformInfo && transformInfo.crossfadeT != null ? (1 - transformInfo.crossfadeT) : 1;
-      ctx.save();
-      ctx.globalAlpha = fadeAlpha;
-      drawOrb(now);
-      ctx.restore();
       if (transformInfo && transformInfo.crossfadeT != null) {
-        var ct = transformInfo.crossfadeT;
-        drawItem(transformInfo.cx, transformInfo.cy, ct, 0.6 + 0.4 * ct, now);
+        var vis = getTransformVisuals(transformInfo.crossfadeT);
+        ctx.save();
+        ctx.globalAlpha = vis.orbAlpha;
+        drawOrb(now);
+        ctx.restore();
+        drawTransformFlash(transformInfo.cx, transformInfo.cy, vis.flashAlpha, now);
+        if (vis.itemAlpha > 0.001) {
+          var iy = transformInfo.cy + (getItemRestY() - transformInfo.cy) * vis.itemAlpha;
+          drawItem(transformInfo.cx, iy, vis.itemAlpha, vis.itemScale, now);
+        }
+      } else {
+        drawOrb(now);
       }
     } else if (state === 'item' && item) {
       drawItem(item.x, item.y, 1, 1, now);
