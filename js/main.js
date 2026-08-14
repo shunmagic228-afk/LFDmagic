@@ -19,12 +19,12 @@
   var TRANSFORM_LOOP_MS      = 2100; // 中央へ渦を巻きながら移動する時間
   var TRANSFORM_LOOPS        = 2.5;  // ぐるっと回る周回数
   var TRANSFORM_CROSSFADE_MS = 2900; // 光がアイテムへ変化しきるまでの時間(演出内容は変えず、ここを伸ばしてゆっくりに)
-  var DISSOLVE_PARTICLE_COUNT = 480; // 光が分散する細かい粒子の数
+  var DISSOLVE_PARTICLE_COUNT = 700; // 光が分散する細かい粒子の数
   var ITEM_DISPLAY_HEIGHT    = 420;  // アイテム画像の表示高さ(CSS px)
   var ITEM_HIT_RADIUS        = 170;  // アイテムにタップで触れたと判定する半径(px)
   var ITEM_REST_Y_RATIO      = 0.42; // アイテムの定位置(画面高さに対する比率。中央よりやや上)
   var REVEAL_GROW_MS         = 320;  // 粒子が着地してから、その場に画像が浮かび上がるまでの時間
-  var REVEAL_RADIUS          = 11;   // 1粒子あたりが画像を写し出す半径(px)。粒子数を増やした分さらに小さくして繊細に
+  var REVEAL_RADIUS          = 9;    // 1粒子あたりが画像を写し出す半径(px)。粒子数を増やした分さらに小さくして繊細に
 
   var itemExitDelayMs = 2000;    // アイテムをタップしてから退場を始めるまでの間(設定画面で変更可能)
   var ITEM_EXIT_SLIDE_MS = 1350; // 画面外へ滑り落ちるまでの時間
@@ -87,9 +87,6 @@
     settingsScreen.classList.add('hidden');
   });
 
-  // 演者だけが気づける、アイテムタップが効いたことを示す小さな点(ステータスバー付近)
-  var exitIndicator = document.getElementById('exitIndicator');
-
   // ---- 事前準備画面(アプリを開き直すたびに一度だけ表示) ----
   // モーションセンサーの許可ダイアログは毎回避けられないため、本番前に安全なタイミングで
   // 済ませてもらうための画面。ここでのタップで許可を要求し、以降は本番用の操作に戻る。
@@ -143,19 +140,31 @@
     itemSamplePoints = pts;
   }
 
-  // 光の粒子を軽く描くための下地スプライト(毎フレームのグラデーション生成コストを避ける)
-  var particleSprite = document.createElement('canvas');
-  particleSprite.width = 32;
-  particleSprite.height = 32;
-  (function () {
-    var sctx = particleSprite.getContext('2d');
+  // 光の粒子を軽く描くための下地スプライト(毎フレームのグラデーション生成コストを避ける)。
+  // 中心は必ず白飛びさせ、ベースの白青い光の質感を保ったまま、ごく一部だけ色味を混ぜる。
+  function makeParticleSprite(midColor) {
+    var c = document.createElement('canvas');
+    c.width = 32;
+    c.height = 32;
+    var sctx = c.getContext('2d');
     var g = sctx.createRadialGradient(16, 16, 0, 16, 16, 16);
     g.addColorStop(0, 'rgba(255,255,255,1)');
-    g.addColorStop(0.35, 'rgba(210,230,255,0.85)');
+    g.addColorStop(0.35, midColor);
     g.addColorStop(1, 'rgba(210,230,255,0)');
     sctx.fillStyle = g;
     sctx.beginPath(); sctx.arc(16, 16, 16, 0, Math.PI * 2); sctx.fill();
-  })();
+    return c;
+  }
+  var particleSpriteBlue = makeParticleSprite('rgba(210,230,255,0.85)'); // ベースの白青(基本はこれ)
+  var particleSpriteGold = makeParticleSprite('rgba(255,205,140,0.85)'); // ごく一部だけ暖色を混ぜる
+  var particleSpritePink = makeParticleSprite('rgba(255,175,215,0.8)');  // ごく一部だけ差し色
+
+  function pickParticleSprite() {
+    var r = Math.random();
+    if (r < 0.80) return particleSpriteBlue;
+    if (r < 0.91) return particleSpriteGold;
+    return particleSpritePink;
+  }
 
   // 粒子が着地した場所から画像を写し出すためのマスク合成用キャンバス(使い回して負荷を抑える)
   var maskCanvas = document.createElement('canvas');
@@ -394,7 +403,6 @@
   function scheduleItemExit() {
     if (!item || item.exiting) return;
     item.exiting = true;
-    exitIndicator.classList.remove('hidden');
     setTimeout(function () {
       if (state !== 'item' || !item) return;
       item.sliding = true;
@@ -414,7 +422,6 @@
     orbTouchCandidate = false;
     lastTapTime = 0;
     cornerTapTimes.length = 0;
-    exitIndicator.classList.add('hidden');
     state = 'idle';
   }
 
@@ -641,7 +648,7 @@
     for (var i = 0; i < n; i++) {
       var p = pts[idxs[i]];
       var burstAngle = rand(0, Math.PI * 2);
-      var burstDist = rand(90, 260); // 大きく広がってから集まる、のダイナミックさを出す
+      var burstDist = rand(140, 380); // 大きく広がってから集まる、のダイナミックさを出す
       particles.push({
         peakX: transformInfo.cx + Math.cos(burstAngle) * burstDist,
         peakY: transformInfo.cy + Math.sin(burstAngle) * burstDist,
@@ -651,7 +658,8 @@
         localY: p[1],
         tStart: rand(0, 0.18),
         dur: rand(0.38, 0.58),
-        size: rand(3, 8)
+        size: rand(2.5, 6.5),
+        sprite: pickParticleSprite()
       });
     }
     transformInfo.particles = particles;
@@ -750,7 +758,6 @@
       if (et >= 1) {
         item = null;
         sparkles.length = 0;
-        exitIndicator.classList.add('hidden');
         state = 'idle';
       }
       return;
@@ -922,7 +929,7 @@
             if (ps.alpha <= 0.01) continue;
             var d = plist[pi].size;
             ctx.globalAlpha = ps.alpha;
-            ctx.drawImage(particleSprite, ps.x - d, ps.y - d, d * 2, d * 2);
+            ctx.drawImage(plist[pi].sprite, ps.x - d, ps.y - d, d * 2, d * 2);
           }
           ctx.restore();
         }

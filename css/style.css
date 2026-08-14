@@ -22,23 +22,6 @@ html, body {
   background: #000;
 }
 
-#exitIndicator {
-  position: fixed;
-  /* 実機のステータスバー(Wi-Fi・電波マーク等)のすぐ近くに来るよう、セーフエリアぶんだけ下げる */
-  top: calc(env(safe-area-inset-top, 20px) + 3px);
-  right: 16px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.4);
-  z-index: 5;
-  pointer-events: none;
-}
-
-#exitIndicator.hidden {
-  display: none;
-}
-
 #primeScreen {
   position: fixed;
   inset: 0;
