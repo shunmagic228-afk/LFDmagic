@@ -19,12 +19,12 @@
   var TRANSFORM_LOOP_MS      = 2100; // 中央へ渦を巻きながら移動する時間
   var TRANSFORM_LOOPS        = 2.5;  // ぐるっと回る周回数
   var TRANSFORM_CROSSFADE_MS = 2900; // 光がアイテムへ変化しきるまでの時間(演出内容は変えず、ここを伸ばしてゆっくりに)
-  var DISSOLVE_PARTICLE_COUNT = 320; // 光が分散する細かい粒子の数
+  var DISSOLVE_PARTICLE_COUNT = 480; // 光が分散する細かい粒子の数
   var ITEM_DISPLAY_HEIGHT    = 420;  // アイテム画像の表示高さ(CSS px)
   var ITEM_HIT_RADIUS        = 170;  // アイテムにタップで触れたと判定する半径(px)
   var ITEM_REST_Y_RATIO      = 0.42; // アイテムの定位置(画面高さに対する比率。中央よりやや上)
   var REVEAL_GROW_MS         = 320;  // 粒子が着地してから、その場に画像が浮かび上がるまでの時間
-  var REVEAL_RADIUS          = 15;   // 1粒子あたりが画像を写し出す半径(px)。小さめにして繊細な粒立ちを保つ
+  var REVEAL_RADIUS          = 11;   // 1粒子あたりが画像を写し出す半径(px)。粒子数を増やした分さらに小さくして繊細に
 
   var ITEM_EXIT_DELAY_MS = 1000; // アイテムをタップしてから退場を始めるまでの間
   var ITEM_EXIT_SLIDE_MS = 1350; // 画面外へ滑り落ちるまでの時間
@@ -277,25 +277,25 @@
   document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
 
   function handleTap(x, y, now) {
+    // 実験用: 画面右下角への「トリプルタップ」は、状態によらずいつでもリセットできる隠しコマンド
+    if (x > W - CORNER_SIZE && y > H - CORNER_SIZE) {
+      cornerTapTimes.push(now);
+      while (cornerTapTimes.length && now - cornerTapTimes[0] > CORNER_TRIPLE_WINDOW_MS) {
+        cornerTapTimes.shift();
+      }
+      if (cornerTapTimes.length >= 3) {
+        cornerTapTimes.length = 0;
+        resetAll();
+      }
+      lastTapTime = 0;
+      return;
+    }
+
     if (state === 'transforming') {
       return; // アイテム化の演出中は一切反応しない
     }
 
     if (state === 'item') {
-      // 実験用: 画面右下角への「トリプルタップ」でリセット(アイテム出現後のみ有効な隠しコマンド)
-      if (x > W - CORNER_SIZE && y > H - CORNER_SIZE) {
-        cornerTapTimes.push(now);
-        while (cornerTapTimes.length && now - cornerTapTimes[0] > CORNER_TRIPLE_WINDOW_MS) {
-          cornerTapTimes.shift();
-        }
-        if (cornerTapTimes.length >= 3) {
-          cornerTapTimes.length = 0;
-          resetAll();
-        }
-        lastTapTime = 0;
-        return;
-      }
-
       // アイテムへの「シングルタップ」で、0.5秒後に画面下へ滑り落ちて退場
       if (item && !item.exiting && Math.hypot(x - item.x, y - item.y) <= ITEM_HIT_RADIUS) {
         scheduleItemExit();
@@ -598,7 +598,7 @@
         localY: p[1],
         tStart: rand(0, 0.18),
         dur: rand(0.38, 0.58),
-        size: rand(4, 11)
+        size: rand(3, 8)
       });
     }
     transformInfo.particles = particles;
