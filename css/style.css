@@ -22,6 +22,54 @@ html, body {
   background: #000;
 }
 
+#exitIndicator {
+  position: fixed;
+  /* 実機のステータスバー(Wi-Fi・電波マーク等)のすぐ近くに来るよう、セーフエリアぶんだけ下げる */
+  top: calc(env(safe-area-inset-top, 20px) + 3px);
+  right: 16px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.4);
+  z-index: 5;
+  pointer-events: none;
+}
+
+#exitIndicator.hidden {
+  display: none;
+}
+
+#primeScreen {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: #000;
+  color: rgba(255, 255, 255, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+  text-align: center;
+}
+
+#primeScreen.hidden {
+  display: none;
+}
+
+#primeScreen .primeText {
+  font-size: 15px;
+  line-height: 1.9;
+}
+
+#primeScreen .primeSub {
+  display: block;
+  margin-top: 12px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
 #settingsScreen {
   position: fixed;
   inset: 0;

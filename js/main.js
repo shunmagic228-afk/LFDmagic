@@ -87,6 +87,18 @@
     settingsScreen.classList.add('hidden');
   });
 
+  // 演者だけが気づける、アイテムタップが効いたことを示す小さな点(ステータスバー付近)
+  var exitIndicator = document.getElementById('exitIndicator');
+
+  // ---- 事前準備画面(アプリを開き直すたびに一度だけ表示) ----
+  // モーションセンサーの許可ダイアログは毎回避けられないため、本番前に安全なタイミングで
+  // 済ませてもらうための画面。ここでのタップで許可を要求し、以降は本番用の操作に戻る。
+  var primeScreen = document.getElementById('primeScreen');
+  primeScreen.addEventListener('click', function () {
+    enableTilt();
+    primeScreen.classList.add('hidden');
+  });
+
   function rand(a, b) { return a + Math.random() * (b - a); }
 
   // ---- 状態管理 ----
@@ -378,10 +390,11 @@
     };
   }
 
-  // アイテムへのダブルタップ後、0.5秒待ってから画面下へ滑り落として退場させる
+  // アイテムへのタップ後、設定された時間だけ待ってから画面下へ滑り落として退場させる
   function scheduleItemExit() {
     if (!item || item.exiting) return;
     item.exiting = true;
+    exitIndicator.classList.remove('hidden');
     setTimeout(function () {
       if (state !== 'item' || !item) return;
       item.sliding = true;
@@ -391,7 +404,7 @@
     }, itemExitDelayMs);
   }
 
-  // 実験用の全リセット(右下角ダブルタップ)
+  // 実験用の全リセット(右下角トリプルタップ)
   function resetAll() {
     orb = null;
     item = null;
@@ -401,6 +414,7 @@
     orbTouchCandidate = false;
     lastTapTime = 0;
     cornerTapTimes.length = 0;
+    exitIndicator.classList.add('hidden');
     state = 'idle';
   }
 
@@ -736,6 +750,7 @@
       if (et >= 1) {
         item = null;
         sparkles.length = 0;
+        exitIndicator.classList.add('hidden');
         state = 'idle';
       }
       return;
@@ -772,17 +787,6 @@
     ctx.filter = 'none';
     ctx.drawImage(itemImg, x - w / 2, y - h / 2, w, h);
 
-    ctx.restore();
-  }
-
-  // 演者だけが気づける、アイテムタップが効いたことを示す小さな点(画面右上)
-  function drawExitIndicator() {
-    var x = W - 20, y = 26;
-    ctx.save();
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.beginPath();
-    ctx.arc(x, y, 4, 0, Math.PI * 2);
-    ctx.fill();
     ctx.restore();
   }
 
@@ -937,7 +941,6 @@
       }
     } else if (state === 'item' && item) {
       drawItem(item.x, item.y, 1, 1, now);
-      if (item.exiting) drawExitIndicator();
     }
 
     requestAnimationFrame(frame);
