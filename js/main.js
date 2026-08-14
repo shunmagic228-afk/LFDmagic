@@ -16,6 +16,13 @@
 
   var TRAIL_FADE_ALPHA = 0.15; // 光球が存在する間、画面を完全な黒ではなく薄い黒で塗って光跡を残す
 
+  var TRIPLE_TAP_WINDOW_MS   = 700;  // この時間内に3回タップされたらアイテム化
+  var TRANSFORM_LOOP_MS      = 1100; // 中央へ渦を巻きながら移動する時間
+  var TRANSFORM_LOOPS        = 1.15; // ぐるっと回る周回数
+  var TRANSFORM_CROSSFADE_MS = 650;  // 光→アイテムのふわっとしたクロスフェード時間
+  var ITEM_DISPLAY_HEIGHT    = 260;  // アイテム画像の表示高さ(CSS px)
+  var ITEM_HIT_RADIUS        = 110;  // アイテムにタップで触れたと判定する半径(px)
+
   var canvas = document.getElementById('stage');
   var ctx = canvas.getContext('2d');
 
@@ -37,10 +44,17 @@
   function rand(a, b) { return a + Math.random() * (b - a); }
 
   // ---- 状態管理 ----
-  // 'idle' | 'active'(光球が画面内に存在)
+  // 'idle' | 'active'(光球が画面内に存在) | 'transforming'(中央へ集まりアイテム化中) | 'item'(アイテムが浮いている)
   var state = 'idle';
   var orb = null;
   var sparkles = [];
+  var transformInfo = null;
+  var item = null;
+
+  var itemImg = new Image();
+  var itemImgLoaded = false;
+  itemImg.onload = function () { itemImgLoaded = true; };
+  itemImg.src = 'img/item.png';
 
   // ---- 端末の傾き(ジャイロ)----
   // 注意: iOSの仕様上、モーションセンサーの許可はページの読み込みごとに
@@ -87,6 +101,7 @@
 
   // ---- タップ検出(誤作動防止つき) ----
   var lastTapTime = 0;
+  var tripleTapTimes = []; // 光球の外への連続タップ(3回でアイテム化)
   var activePointerId = null;
   var pointerStartX = 0, pointerStartY = 0, pointerStartT = 0;
   var pointerMoved = false;
@@ -192,6 +207,25 @@
   document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
 
   function handleTap(x, y, now) {
+    if (state === 'transforming') {
+      return; // アイテム化の演出中は一切反応しない
+    }
+
+    if (state === 'item') {
+      // アイテムへの「ダブルタップ」でカットアウト
+      if (item && Math.hypot(x - item.x, y - item.y) <= ITEM_HIT_RADIUS) {
+        if (lastTapTime !== 0 && (now - lastTapTime) <= DOUBLE_TAP_MAX_INTERVAL) {
+          lastTapTime = 0;
+          cutOutItem();
+        } else {
+          lastTapTime = now;
+        }
+      } else {
+        lastTapTime = 0;
+      }
+      return;
+    }
+
     if (state === 'active') {
       // 光球への「ダブルタップ」でのみカットアウト。誤って光球に触れただけでは消えない
       if (orb && Math.hypot(x - orb.x, y - orb.y) <= ORB_HIT_RADIUS) {
@@ -201,15 +235,47 @@
         } else {
           lastTapTime = now;
         }
+        tripleTapTimes.length = 0; // 光球への連打はアイテム化のカウントに混同させない
       } else {
-        lastTapTime = 0; // 光球の外へのタップは無視
+        // 光球の外への連続タップ → 3回でアイテム化
+        lastTapTime = 0;
+        tripleTapTimes.push(now);
+        while (tripleTapTimes.length && now - tripleTapTimes[0] > TRIPLE_TAP_WINDOW_MS) {
+          tripleTapTimes.shift();
+        }
+        if (tripleTapTimes.length >= 3) {
+          tripleTapTimes.length = 0;
+          transformToItem();
+        }
       }
       return;
     }
 
     // 待機中はワンタップで即発射
     lastTapTime = 0;
+    tripleTapTimes.length = 0;
     launchOrb(x, y);
+  }
+
+  function transformToItem() {
+    if (!orb) return;
+    state = 'transforming';
+    var cx = W / 2, cy = H / 2;
+    var dx = orb.x - cx, dy = orb.y - cy;
+    transformInfo = {
+      cx: cx, cy: cy,
+      r0: Math.max(30, Math.hypot(dx, dy)),
+      a0: Math.atan2(dy, dx),
+      startedAt: performance.now(),
+      crossfadeStarted: null,
+      crossfadeT: null
+    };
+  }
+
+  function cutOutItem() {
+    item = null;
+    sparkles.length = 0;
+    state = 'idle';
   }
 
   function launchOrb(x, y) {
@@ -387,6 +453,77 @@
     }
   }
 
+  // ---- 光球 → アイテムへの変化(渦を巻きながら中央へ、そしてクロスフェード) ----
+  function updateTransforming(now, dt) {
+    var elapsed = now - transformInfo.startedAt;
+
+    if (elapsed <= TRANSFORM_LOOP_MS) {
+      var t = elapsed / TRANSFORM_LOOP_MS;
+      var ease = 1 - Math.pow(1 - t, 2); // 後半ほど速く中心へ収束
+      var r = transformInfo.r0 * (1 - ease);
+      var ang = transformInfo.a0 + t * Math.PI * 2 * TRANSFORM_LOOPS;
+      orb.x = transformInfo.cx + Math.cos(ang) * r;
+      orb.y = transformInfo.cy + Math.sin(ang) * r;
+
+      orb.trail.push({ x: orb.x, y: orb.y, t: now });
+      while (orb.trail.length && now - orb.trail[0].t > 700) orb.trail.shift();
+      if (Math.random() < 0.7) {
+        addSparkle(orb.x, orb.y, rand(-40, 40), rand(-40, 40), rand(400, 900));
+      }
+    } else {
+      // ふわっとクロスフェード: 光が消えていき、アイテムが浮かび上がる
+      if (transformInfo.crossfadeStarted === null) transformInfo.crossfadeStarted = now;
+      orb.x = transformInfo.cx;
+      orb.y = transformInfo.cy;
+      transformInfo.crossfadeT = Math.min(1, (now - transformInfo.crossfadeStarted) / TRANSFORM_CROSSFADE_MS);
+
+      if (Math.random() < 0.35) {
+        addSparkle(orb.x + rand(-20, 20), orb.y + rand(-20, 20), rand(-25, 25), rand(-25, 25), rand(300, 650));
+      }
+
+      if (transformInfo.crossfadeT >= 1) {
+        item = { x: transformInfo.cx, y: transformInfo.cy, bornAt: now };
+        orb = null;
+        transformInfo = null;
+        state = 'item';
+      }
+    }
+  }
+
+  function updateItemFloating(now) {
+    var t = (now - item.bornAt) / 1000;
+    // ゆっくり有機的に漂う(黒い空間に浮いている質感)
+    item.x = W / 2 + Math.sin(t * 0.55) * 16 + Math.sin(t * 1.3 + 1.1) * 6;
+    item.y = H / 2 + Math.sin(t * 0.4 + 0.7) * 12 + Math.sin(t * 1.1 + 2.0) * 5;
+  }
+
+  function drawItem(x, y, alpha, scale, now) {
+    if (!itemImgLoaded) return;
+    var ratio = itemImg.naturalWidth / itemImg.naturalHeight;
+    var h = ITEM_DISPLAY_HEIGHT * scale;
+    var w = h * ratio;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // 背景にほんのり光暈を置き、暗闇に浮いている質感を出す
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.filter = 'blur(40px)';
+    var glowR = Math.max(w, h) * 0.6;
+    var glow = ctx.createRadialGradient(x, y, 0, x, y, glowR);
+    var breathe = 0.28 + 0.06 * Math.sin(now / 900);
+    glow.addColorStop(0, 'rgba(150,190,255,' + breathe + ')');
+    glow.addColorStop(1, 'rgba(150,190,255,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(x, y, glowR, 0, Math.PI * 2); ctx.fill();
+
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.filter = 'none';
+    ctx.drawImage(itemImg, x - w / 2, y - h / 2, w, h);
+
+    ctx.restore();
+  }
+
   function drawSpike(x, y, angle, length, width, alpha) {
     var dx = Math.cos(angle), dy = Math.sin(angle);
     var px = -dy, py = dx;
@@ -465,7 +602,7 @@
     lastFrameTime = now;
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (state === 'active') {
+    if (state === 'active' || state === 'transforming') {
       // 完全な黒ではなく薄い黒で塗ることで、光の軌跡がふんわり残る
       ctx.fillStyle = 'rgba(0,0,0,' + TRAIL_FADE_ALPHA + ')';
     } else {
@@ -479,10 +616,14 @@
       } else {
         updateOrb(now, dt);
       }
+    } else if (state === 'transforming' && orb) {
+      updateTransforming(now, dt);
+    } else if (state === 'item' && item) {
+      updateItemFloating(now);
     }
     updateSparkles(now, dt);
 
-    if (state === 'active' && orb) {
+    if ((state === 'active' || state === 'transforming') && orb) {
       drawTrail(now);
     }
     if (sparkles.length) {
@@ -493,6 +634,18 @@
     }
     if (state === 'active' && orb) {
       drawOrb(now);
+    } else if (state === 'transforming' && orb) {
+      var fadeAlpha = transformInfo && transformInfo.crossfadeT != null ? (1 - transformInfo.crossfadeT) : 1;
+      ctx.save();
+      ctx.globalAlpha = fadeAlpha;
+      drawOrb(now);
+      ctx.restore();
+      if (transformInfo && transformInfo.crossfadeT != null) {
+        var ct = transformInfo.crossfadeT;
+        drawItem(transformInfo.cx, transformInfo.cy, ct, 0.6 + 0.4 * ct, now);
+      }
+    } else if (state === 'item' && item) {
+      drawItem(item.x, item.y, 1, 1, now);
     }
 
     requestAnimationFrame(frame);
