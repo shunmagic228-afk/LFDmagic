@@ -18,7 +18,7 @@
 
   var TRANSFORM_LOOP_MS      = 2100; // 中央へ渦を巻きながら移動する時間
   var TRANSFORM_LOOPS        = 2.5;  // ぐるっと回る周回数
-  var TRANSFORM_CROSSFADE_MS = 2900; // 光がアイテムへ変化しきるまでの時間(演出内容は変えず、ここを伸ばしてゆっくりに)
+  var TRANSFORM_CROSSFADE_MS = 3800; // 光がアイテムへ変化しきるまでの時間(演出内容は変えず、ここを伸ばしてゆっくりに)
   var DISSOLVE_PARTICLE_COUNT = 700; // 光が分散する細かい粒子の数
   var ITEM_DISPLAY_HEIGHT    = 420;  // アイテム画像の表示高さ(CSS px)
   var ITEM_HIT_RADIUS        = 170;  // アイテムにタップで触れたと判定する半径(px)
@@ -161,8 +161,8 @@
 
   function pickParticleSprite() {
     var r = Math.random();
-    if (r < 0.80) return particleSpriteBlue;
-    if (r < 0.91) return particleSpriteGold;
+    if (r < 0.72) return particleSpriteBlue;
+    if (r < 0.86) return particleSpriteGold;
     return particleSpritePink;
   }
 
@@ -649,7 +649,12 @@
       var p = pts[idxs[i]];
       var burstAngle = rand(0, Math.PI * 2);
       var burstDist = rand(140, 380); // 大きく広がってから集まる、のダイナミックさを出す
+      // 発生位置を中心の一点ではなく光球の輪郭付近に散らし、「光球そのものが砕けて粒子になる」ように見せる
+      var startAngle = rand(0, Math.PI * 2);
+      var startR = rand(8, 42);
       particles.push({
+        startX: transformInfo.cx + Math.cos(startAngle) * startR,
+        startY: transformInfo.cy + Math.sin(startAngle) * startR,
         peakX: transformInfo.cx + Math.cos(burstAngle) * burstDist,
         peakY: transformInfo.cy + Math.sin(burstAngle) * burstDist,
         tx: transformInfo.cx + p[0],
@@ -682,18 +687,18 @@
   // 「発生点→大きく広がった位置(peak)→アイテムの目標点」の2区間で、分散してから集まる動きを作る。
   function getParticleState(p, ct) {
     var localT = (ct - p.tStart) / p.dur;
-    if (localT <= 0) return { x: transformInfo.cx, y: transformInfo.cy, alpha: 0 };
+    if (localT <= 0) return { x: p.startX, y: p.startY, alpha: 0 };
     if (localT >= 1) {
       var settle = Math.min(1, (localT - 1) * 4); // 到着後すこしで個別にふっと消える
       return { x: p.tx, y: p.ty, alpha: Math.max(0, 1 - settle) };
     }
     var alpha = Math.min(1, localT * 5);
     if (localT < 0.42) {
-      // 前半: 大きく広がっていく(分散)
+      // 前半: 光球の輪郭から弾け、大きく広がっていく(分散)
       var e1 = easeOutCubic(localT / 0.42);
       return {
-        x: transformInfo.cx + (p.peakX - transformInfo.cx) * e1,
-        y: transformInfo.cy + (p.peakY - transformInfo.cy) * e1,
+        x: p.startX + (p.peakX - p.startX) * e1,
+        y: p.startY + (p.peakY - p.startY) * e1,
         alpha: alpha
       };
     }
@@ -911,11 +916,16 @@
       if (transformInfo && transformInfo.crossfadeT != null) {
         var ct = transformInfo.crossfadeT;
 
-        // 光は素早く分散していく(粒子が受け継ぐので長く残す必要はない)
-        var orbAlpha = Math.max(0, 1 - ct / 0.18);
+        // 光球は縮みながら崩れて消えていく(粒子が受け継ぐので、輪郭が砕ける感覚を残しつつ手早く)
+        var orbShrinkT = Math.min(1, ct / 0.26);
+        var orbAlpha = Math.max(0, 1 - orbShrinkT);
         if (orbAlpha > 0.001) {
+          var orbScale = 1 - 0.45 * orbShrinkT;
           ctx.save();
           ctx.globalAlpha = orbAlpha;
+          ctx.translate(orb.x, orb.y);
+          ctx.scale(orbScale, orbScale);
+          ctx.translate(-orb.x, -orb.y);
           drawOrb(now);
           ctx.restore();
         }
