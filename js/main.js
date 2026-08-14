@@ -91,11 +91,20 @@
   var pointerStartX = 0, pointerStartY = 0, pointerStartT = 0;
   var pointerMoved = false;
 
+  // ---- 光球を指でつまんで動かす ----
+  var orbTouchCandidate = false; // 光球の上でポインターダウンした
+  var draggingOrb = false;       // 実際に指が動いてドラッグに移行した
+  var dragTargetX = 0, dragTargetY = 0;
+  var dragVX = 0, dragVY = 0;
+  var dragLastX = 0, dragLastY = 0, dragLastT = 0;
+
   function onPointerDown(e) {
     // 同時に複数の指が触れている場合は誤作動防止のため一切無視する
     if (activePointerId !== null) {
       activePointerId = null;
       lastTapTime = 0;
+      draggingOrb = false;
+      orbTouchCandidate = false;
       return;
     }
     if (e.button !== undefined && e.button !== 0) return; // 右クリック等は無視
@@ -105,6 +114,13 @@
     pointerStartY = e.clientY;
     pointerStartT = performance.now();
     pointerMoved = false;
+
+    if (state === 'active' && orb && Math.hypot(e.clientX - orb.x, e.clientY - orb.y) <= ORB_HIT_RADIUS) {
+      orbTouchCandidate = true;
+    } else {
+      orbTouchCandidate = false;
+    }
+    draggingOrb = false;
   }
 
   function onPointerMove(e) {
@@ -114,11 +130,38 @@
     if (Math.sqrt(dx * dx + dy * dy) > TAP_MAX_MOVEMENT) {
       pointerMoved = true;
     }
+
+    if (orbTouchCandidate && pointerMoved && !draggingOrb) {
+      draggingOrb = true;
+      dragLastX = e.clientX; dragLastY = e.clientY; dragLastT = performance.now();
+    }
+    if (draggingOrb) {
+      dragTargetX = e.clientX;
+      dragTargetY = e.clientY;
+      var t = performance.now();
+      var dtms = Math.max(1, t - dragLastT);
+      dragVX = (e.clientX - dragLastX) / (dtms / 1000);
+      dragVY = (e.clientY - dragLastY) / (dtms / 1000);
+      dragLastX = e.clientX; dragLastY = e.clientY; dragLastT = t;
+    }
   }
 
   function onPointerUp(e) {
     if (e.pointerId !== activePointerId) return;
     activePointerId = null;
+
+    if (draggingOrb) {
+      // ドラッグ終了 → 指を離した勢いを引き継いで、以降はジャイロ側の物理へ自然にバトンタッチ
+      draggingOrb = false;
+      orbTouchCandidate = false;
+      if (orb) {
+        orb.vx = dragVX * 0.6;
+        orb.vy = dragVY * 0.6;
+      }
+      lastTapTime = 0;
+      return;
+    }
+    orbTouchCandidate = false;
 
     var duration = performance.now() - pointerStartT;
     var isValidTap = !pointerMoved && duration <= TAP_MAX_DURATION;
@@ -137,6 +180,8 @@
       activePointerId = null;
     }
     lastTapTime = 0;
+    draggingOrb = false;
+    orbTouchCandidate = false;
   }
 
   canvas.addEventListener('pointerdown', onPointerDown, { passive: true });
@@ -148,24 +193,26 @@
 
   function handleTap(x, y, now) {
     if (state === 'active') {
-      // 光球そのものに触れた場合のみカットアウトで消す
+      // 光球への「ダブルタップ」でのみカットアウト。誤って光球に触れただけでは消えない
       if (orb && Math.hypot(x - orb.x, y - orb.y) <= ORB_HIT_RADIUS) {
-        cutOutOrb();
+        if (lastTapTime !== 0 && (now - lastTapTime) <= DOUBLE_TAP_MAX_INTERVAL) {
+          lastTapTime = 0;
+          cutOutOrb();
+        } else {
+          lastTapTime = now;
+        }
+      } else {
+        lastTapTime = 0; // 光球の外へのタップは無視
       }
-      lastTapTime = 0;
       return;
     }
 
-    if (lastTapTime !== 0 && (now - lastTapTime) <= DOUBLE_TAP_MAX_INTERVAL) {
-      // ダブルタップ成立 → 2タップ目と同時にこの位置から光が入る
-      lastTapTime = 0;
-      onDoubleTap(x, y);
-    } else {
-      lastTapTime = now;
-    }
+    // 待機中はワンタップで即発射
+    lastTapTime = 0;
+    launchOrb(x, y);
   }
 
-  function onDoubleTap(x, y) {
+  function launchOrb(x, y) {
     enableTilt(); // ユーザー操作の中で呼ぶ必要があるためここで許可を求める
     resetTiltBaseline(); // 今この瞬間に構えている持ち方を新しい基準にする
     spawnOrb(x, y);
@@ -322,6 +369,24 @@
     }
   }
 
+  // 指でつまんで動かしている間の更新(ジャイロの計算はそのまま裏で継続させ、位置だけ指に追従させる)
+  function updateOrbDragging(now, dt) {
+    var followRate = Math.min(1, dt * 14); // 指にほぼ追従しつつ、わずかに「ついてくる」柔らかさを残す
+    orb.x += (dragTargetX - orb.x) * followRate;
+    orb.y += (dragTargetY - orb.y) * followRate;
+
+    var hardM = BOUNDARY_MARGIN * 0.5;
+    orb.x = Math.max(hardM, Math.min(W - hardM, orb.x));
+    orb.y = Math.max(hardM, Math.min(H - hardM, orb.y));
+
+    orb.trail.push({ x: orb.x, y: orb.y, t: now });
+    while (orb.trail.length && now - orb.trail[0].t > 700) orb.trail.shift();
+
+    if (Math.random() < 0.5) {
+      addSparkle(orb.x, orb.y, rand(-30, 30), rand(-30, 30), rand(400, 900));
+    }
+  }
+
   function drawSpike(x, y, angle, length, width, alpha) {
     var dx = Math.cos(angle), dy = Math.sin(angle);
     var px = -dy, py = dx;
@@ -409,7 +474,11 @@
     ctx.fillRect(0, 0, W, H);
 
     if (state === 'active' && orb) {
-      updateOrb(now, dt);
+      if (draggingOrb) {
+        updateOrbDragging(now, dt);
+      } else {
+        updateOrb(now, dt);
+      }
     }
     updateSparkles(now, dt);
 
