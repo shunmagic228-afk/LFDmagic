@@ -16,7 +16,7 @@
 
   var TRAIL_FADE_ALPHA = 0.15; // 光球が存在する間、画面を完全な黒ではなく薄い黒で塗って光跡を残す
 
-  var TRANSFORM_LOOP_MS      = 1100; // 中央へ渦を巻きながら移動する時間
+  var TRANSFORM_LOOP_MS      = 2100; // 中央へ渦を巻きながら移動する時間
   var TRANSFORM_LOOPS        = 1.15; // ぐるっと回る周回数
   var TRANSFORM_CROSSFADE_MS = 2100; // 光がアイテムへ変化しきるまでの時間(速度の印象は維持)
   var DISSOLVE_PARTICLE_COUNT = 320; // 光が分散する細かい粒子の数
@@ -27,7 +27,7 @@
   var REVEAL_RADIUS          = 15;   // 1粒子あたりが画像を写し出す半径(px)。小さめにして繊細な粒立ちを保つ
 
   var ITEM_EXIT_DELAY_MS = 500;  // アイテムをタップしてから退場を始めるまでの間
-  var ITEM_EXIT_SLIDE_MS = 1100; // 画面外へ滑り落ちるまでの時間
+  var ITEM_EXIT_SLIDE_MS = 1350; // 画面外へ滑り落ちるまでの時間
 
   var CORNER_SIZE = 90; // 画面右下のリセット判定エリアの一辺(px)
 
