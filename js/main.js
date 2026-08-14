@@ -661,8 +661,8 @@
         ty: restY + p[1],
         localX: p[0],
         localY: p[1],
-        tStart: rand(0, 0.18),
-        dur: rand(0.38, 0.58),
+        tStart: rand(0, 0.12),
+        dur: rand(0.55, 0.80),
         size: rand(2.5, 6.5),
         sprite: pickParticleSprite()
       });
@@ -947,8 +947,8 @@
         // 着地した粒子の場所ごとに、画像がその場でじわっと浮かび上がる(粒子が合体して絵になる)
         drawRevealedItem(transformInfo.cx, getItemRestY(), ct, now);
 
-        // 仕上げの保険: 終盤はうっすら完成画像を重ねて、粒がまばらでも綺麗に完成させる
-        var topUpRaw = Math.min(1, Math.max(0, (ct - 0.88) / 0.12));
+        // 仕上げ: 終盤にかけて完成画像へなめらかに寄せていく(集まりきる直前で止まって見えないように)
+        var topUpRaw = Math.min(1, Math.max(0, (ct - 0.80) / 0.20));
         var topUp = topUpRaw * topUpRaw * (3 - 2 * topUpRaw);
         if (topUp > 0.001) {
           drawItem(transformInfo.cx, getItemRestY(), topUp, 1, now);
