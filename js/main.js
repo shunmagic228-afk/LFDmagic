@@ -26,11 +26,11 @@
   var REVEAL_GROW_MS         = 320;  // 粒子が着地してから、その場に画像が浮かび上がるまでの時間
   var REVEAL_RADIUS          = 11;   // 1粒子あたりが画像を写し出す半径(px)。粒子数を増やした分さらに小さくして繊細に
 
-  var ITEM_EXIT_DELAY_MS = 2000; // アイテムをタップしてから退場を始めるまでの間
+  var itemExitDelayMs = 2000;    // アイテムをタップしてから退場を始めるまでの間(設定画面で変更可能)
   var ITEM_EXIT_SLIDE_MS = 1350; // 画面外へ滑り落ちるまでの時間
 
   var CORNER_SIZE = 90;              // 画面右下のリセット判定エリアの一辺(px)
-  var CORNER_TRIPLE_WINDOW_MS = 700; // この時間内に3回タップされたらリセット
+  var CORNER_TRIPLE_WINDOW_MS = 700; // この時間内に3回タップされたらリセット/設定画面
 
   function getItemRestY() { return H * ITEM_REST_Y_RATIO; }
 
@@ -51,6 +51,41 @@
   window.addEventListener('resize', resize);
   window.addEventListener('orientationchange', resize);
   resize();
+
+  // ---- 設定画面(演者用。ダブルタップ・トリプルタップと違いHTMLの通常ボタンで作る) ----
+  var ITEM_EXIT_DELAY_OPTIONS_S = [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  var settingsScreen = document.getElementById('settingsScreen');
+  var exitDelayGrid = document.getElementById('exitDelayGrid');
+  var closeSettingsBtn = document.getElementById('closeSettingsBtn');
+
+  ITEM_EXIT_DELAY_OPTIONS_S.forEach(function (sec) {
+    var btn = document.createElement('button');
+    btn.className = 'durationBtn';
+    btn.textContent = sec + '秒';
+    btn.dataset.ms = Math.round(sec * 1000);
+    btn.addEventListener('click', function () {
+      itemExitDelayMs = Number(btn.dataset.ms);
+      updateExitDelayButtons();
+    });
+    exitDelayGrid.appendChild(btn);
+  });
+
+  function updateExitDelayButtons() {
+    var btns = exitDelayGrid.querySelectorAll('.durationBtn');
+    for (var i = 0; i < btns.length; i++) {
+      var isSelected = Number(btns[i].dataset.ms) === itemExitDelayMs;
+      btns[i].classList.toggle('selected', isSelected);
+    }
+  }
+
+  function openSettings() {
+    updateExitDelayButtons();
+    settingsScreen.classList.remove('hidden');
+  }
+
+  closeSettingsBtn.addEventListener('click', function () {
+    settingsScreen.classList.add('hidden');
+  });
 
   function rand(a, b) { return a + Math.random() * (b - a); }
 
@@ -277,7 +312,7 @@
   document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
 
   function handleTap(x, y, now) {
-    // 実験用: 画面右下角への「トリプルタップ」は、状態によらずいつでもリセットできる隠しコマンド
+    // 画面右下角への「トリプルタップ」: 何か出ていればリセット、何も出ていなければ設定画面を開く
     if (x > W - CORNER_SIZE && y > H - CORNER_SIZE) {
       cornerTapTimes.push(now);
       while (cornerTapTimes.length && now - cornerTapTimes[0] > CORNER_TRIPLE_WINDOW_MS) {
@@ -285,7 +320,11 @@
       }
       if (cornerTapTimes.length >= 3) {
         cornerTapTimes.length = 0;
-        resetAll();
+        if (state === 'idle') {
+          openSettings();
+        } else {
+          resetAll();
+        }
       }
       lastTapTime = 0;
       return;
@@ -349,7 +388,7 @@
       item.exitStartAt = performance.now();
       item.exitFromX = item.x;
       item.exitFromY = item.y;
-    }, ITEM_EXIT_DELAY_MS);
+    }, itemExitDelayMs);
   }
 
   // 実験用の全リセット(右下角ダブルタップ)
@@ -736,6 +775,17 @@
     ctx.restore();
   }
 
+  // 演者だけが気づける、アイテムタップが効いたことを示す小さな点(画面右上)
+  function drawExitIndicator() {
+    var x = W - 20, y = 26;
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   function drawSpike(x, y, angle, length, width, alpha) {
     var dx = Math.cos(angle), dy = Math.sin(angle);
     var px = -dy, py = dx;
@@ -887,6 +937,7 @@
       }
     } else if (state === 'item' && item) {
       drawItem(item.x, item.y, 1, 1, now);
+      if (item.exiting) drawExitIndicator();
     }
 
     requestAnimationFrame(frame);
