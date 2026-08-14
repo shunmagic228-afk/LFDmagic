@@ -16,18 +16,17 @@
 
   var TRAIL_FADE_ALPHA = 0.15; // 光球が存在する間、画面を完全な黒ではなく薄い黒で塗って光跡を残す
 
-  var TRIPLE_TAP_WINDOW_MS   = 700;  // この時間内に3回タップされたらアイテム化
   var TRANSFORM_LOOP_MS      = 1100; // 中央へ渦を巻きながら移動する時間
   var TRANSFORM_LOOPS        = 1.15; // ぐるっと回る周回数
   var TRANSFORM_CROSSFADE_MS = 2100; // 光がアイテムへ変化しきるまでの時間(速度の印象は維持)
-  var DISSOLVE_PARTICLE_COUNT = 260; // 光が分散する細かい粒子の数
-  var ITEM_DISPLAY_HEIGHT    = 291;  // アイテム画像の表示高さ(CSS px)。画像内の余白差を補正し、見た目の瓶のサイズを従来と揃えてある
-  var ITEM_HIT_RADIUS        = 130;  // アイテムにタップで触れたと判定する半径(px)
+  var DISSOLVE_PARTICLE_COUNT = 320; // 光が分散する細かい粒子の数
+  var ITEM_DISPLAY_HEIGHT    = 340;  // アイテム画像の表示高さ(CSS px)
+  var ITEM_HIT_RADIUS        = 140;  // アイテムにタップで触れたと判定する半径(px)
   var ITEM_REST_Y_RATIO      = 0.42; // アイテムの定位置(画面高さに対する比率。中央よりやや上)
-  var REVEAL_GROW_MS         = 260;  // 粒子が着地してから、その場に画像が浮かび上がるまでの時間
-  var REVEAL_RADIUS          = 30;   // 1粒子あたりが画像を写し出す半径(px)
+  var REVEAL_GROW_MS         = 320;  // 粒子が着地してから、その場に画像が浮かび上がるまでの時間
+  var REVEAL_RADIUS          = 15;   // 1粒子あたりが画像を写し出す半径(px)。小さめにして繊細な粒立ちを保つ
 
-  var ITEM_EXIT_DELAY_MS = 500;  // アイテムをダブルタップしてから退場を始めるまでの間
+  var ITEM_EXIT_DELAY_MS = 500;  // アイテムをタップしてから退場を始めるまでの間
   var ITEM_EXIT_SLIDE_MS = 1100; // 画面外へ滑り落ちるまでの時間
 
   var CORNER_SIZE = 90; // 画面右下のリセット判定エリアの一辺(px)
@@ -171,7 +170,6 @@
 
   // ---- タップ検出(誤作動防止つき) ----
   var lastTapTime = 0;
-  var tripleTapTimes = []; // 光球の外への連続タップ(3回でアイテム化)
   var lastCornerTapTime = 0; // 画面右下角への連続タップ(実験用リセット、アイテム出現後のみ有効)
   var activePointerId = null;
   var pointerStartX = 0, pointerStartY = 0, pointerStartT = 0;
@@ -295,22 +293,16 @@
         return;
       }
 
-      // アイテムへの「ダブルタップ」で、0.5秒後に画面下へ滑り落ちて退場
+      // アイテムへの「シングルタップ」で、0.5秒後に画面下へ滑り落ちて退場
       if (item && !item.exiting && Math.hypot(x - item.x, y - item.y) <= ITEM_HIT_RADIUS) {
-        if (lastTapTime !== 0 && (now - lastTapTime) <= DOUBLE_TAP_MAX_INTERVAL) {
-          lastTapTime = 0;
-          scheduleItemExit();
-        } else {
-          lastTapTime = now;
-        }
-      } else {
-        lastTapTime = 0;
+        scheduleItemExit();
       }
+      lastTapTime = 0;
       return;
     }
 
     if (state === 'active') {
-      // 光球への「ダブルタップ」でアイテムへ変化させる
+      // 光球への「ダブルタップ」でアイテムへ変化させる。それ以外のタップは無視
       if (orb && Math.hypot(x - orb.x, y - orb.y) <= ORB_HIT_RADIUS) {
         if (lastTapTime !== 0 && (now - lastTapTime) <= DOUBLE_TAP_MAX_INTERVAL) {
           lastTapTime = 0;
@@ -318,25 +310,14 @@
         } else {
           lastTapTime = now;
         }
-        tripleTapTimes.length = 0; // 光球への連打はアイテム化のカウントに混同させない
       } else {
-        // 光球の外への連続タップ → 3回でアイテム化
         lastTapTime = 0;
-        tripleTapTimes.push(now);
-        while (tripleTapTimes.length && now - tripleTapTimes[0] > TRIPLE_TAP_WINDOW_MS) {
-          tripleTapTimes.shift();
-        }
-        if (tripleTapTimes.length >= 3) {
-          tripleTapTimes.length = 0;
-          transformToItem();
-        }
       }
       return;
     }
 
     // 待機中はワンタップで即発射
     lastTapTime = 0;
-    tripleTapTimes.length = 0;
     launchOrb(x, y);
   }
 
@@ -377,7 +358,6 @@
     draggingOrb = false;
     orbTouchCandidate = false;
     lastTapTime = 0;
-    tripleTapTimes.length = 0;
     lastCornerTapTime = 0;
     state = 'idle';
   }
@@ -604,18 +584,18 @@
     var particles = [];
     for (var i = 0; i < n; i++) {
       var p = pts[idxs[i]];
-      var scatterAngle = rand(0, Math.PI * 2);
-      var scatterR = rand(20, 110);
+      var burstAngle = rand(0, Math.PI * 2);
+      var burstDist = rand(90, 260); // 大きく広がってから集まる、のダイナミックさを出す
       particles.push({
-        sx: transformInfo.cx + Math.cos(scatterAngle) * scatterR,
-        sy: transformInfo.cy + Math.sin(scatterAngle) * scatterR,
+        peakX: transformInfo.cx + Math.cos(burstAngle) * burstDist,
+        peakY: transformInfo.cy + Math.sin(burstAngle) * burstDist,
         tx: transformInfo.cx + p[0],
         ty: restY + p[1],
         localX: p[0],
         localY: p[1],
-        tStart: rand(0, 0.32),
-        dur: rand(0.32, 0.5),
-        size: rand(5, 13)
+        tStart: rand(0, 0.18),
+        dur: rand(0.38, 0.58),
+        size: rand(4, 11)
       });
     }
     transformInfo.particles = particles;
@@ -632,20 +612,33 @@
   }
 
   function easeOutCubic(x) { return 1 - Math.pow(1 - x, 3); }
+  function easeInOutCubic(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
 
-  // 粒子1個の、変化の進行度ct(0-1)における位置と不透明度
+  // 粒子1個の、変化の進行度ct(0-1)における位置と不透明度。
+  // 「発生点→大きく広がった位置(peak)→アイテムの目標点」の2区間で、分散してから集まる動きを作る。
   function getParticleState(p, ct) {
     var localT = (ct - p.tStart) / p.dur;
-    if (localT <= 0) return { x: p.sx, y: p.sy, alpha: 0 };
+    if (localT <= 0) return { x: transformInfo.cx, y: transformInfo.cy, alpha: 0 };
     if (localT >= 1) {
       var settle = Math.min(1, (localT - 1) * 4); // 到着後すこしで個別にふっと消える
       return { x: p.tx, y: p.ty, alpha: Math.max(0, 1 - settle) };
     }
-    var e = easeOutCubic(localT);
+    var alpha = Math.min(1, localT * 5);
+    if (localT < 0.42) {
+      // 前半: 大きく広がっていく(分散)
+      var e1 = easeOutCubic(localT / 0.42);
+      return {
+        x: transformInfo.cx + (p.peakX - transformInfo.cx) * e1,
+        y: transformInfo.cy + (p.peakY - transformInfo.cy) * e1,
+        alpha: alpha
+      };
+    }
+    // 後半: アイテムの形へ集まっていく(収束)
+    var e2 = easeInOutCubic((localT - 0.42) / 0.58);
     return {
-      x: p.sx + (p.tx - p.sx) * e,
-      y: p.sy + (p.ty - p.sy) * e,
-      alpha: Math.min(1, localT * 4)
+      x: p.peakX + (p.tx - p.peakX) * e2,
+      y: p.peakY + (p.ty - p.peakY) * e2,
+      alpha: alpha
     };
   }
 
