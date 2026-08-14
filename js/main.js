@@ -23,7 +23,7 @@
   var ITEM_DISPLAY_HEIGHT    = 420;  // アイテム画像の表示高さ(CSS px)
   var ITEM_HIT_RADIUS        = 170;  // アイテムにタップで触れたと判定する半径(px)
   var ITEM_REST_Y_RATIO      = 0.42; // アイテムの定位置(画面高さに対する比率。中央よりやや上)
-  var REVEAL_GROW_MS         = 320;  // 粒子が着地してから、その場に画像が浮かび上がるまでの時間
+  var REVEAL_GROW_MS         = 220;  // 粒子が着地してから、その場に画像が浮かび上がるまでの時間
   var REVEAL_RADIUS          = 9;    // 1粒子あたりが画像を写し出す半径(px)。粒子数を増やした分さらに小さくして繊細に
 
   var itemExitDelayMs = 2000;    // アイテムをタップしてから退場を始めるまでの間(設定画面で変更可能)
@@ -661,8 +661,8 @@
         ty: restY + p[1],
         localX: p[0],
         localY: p[1],
-        tStart: rand(0, 0.12),
-        dur: rand(0.55, 0.80),
+        tStart: rand(0, 0.08),
+        dur: rand(0.68, 0.82),
         size: rand(2.5, 6.5),
         sprite: pickParticleSprite()
       });
@@ -948,7 +948,7 @@
         drawRevealedItem(transformInfo.cx, getItemRestY(), ct, now);
 
         // 仕上げ: 終盤にかけて完成画像へなめらかに寄せていく(集まりきる直前で止まって見えないように)
-        var topUpRaw = Math.min(1, Math.max(0, (ct - 0.80) / 0.20));
+        var topUpRaw = Math.min(1, Math.max(0, (ct - 0.82) / 0.18));
         var topUp = topUpRaw * topUpRaw * (3 - 2 * topUpRaw);
         if (topUp > 0.001) {
           drawItem(transformInfo.cx, getItemRestY(), topUp, 1, now);
