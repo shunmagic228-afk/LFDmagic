@@ -20,8 +20,8 @@
   var TRANSFORM_LOOPS        = 1.15; // ぐるっと回る周回数
   var TRANSFORM_CROSSFADE_MS = 2100; // 光がアイテムへ変化しきるまでの時間(速度の印象は維持)
   var DISSOLVE_PARTICLE_COUNT = 320; // 光が分散する細かい粒子の数
-  var ITEM_DISPLAY_HEIGHT    = 340;  // アイテム画像の表示高さ(CSS px)
-  var ITEM_HIT_RADIUS        = 140;  // アイテムにタップで触れたと判定する半径(px)
+  var ITEM_DISPLAY_HEIGHT    = 420;  // アイテム画像の表示高さ(CSS px)
+  var ITEM_HIT_RADIUS        = 170;  // アイテムにタップで触れたと判定する半径(px)
   var ITEM_REST_Y_RATIO      = 0.42; // アイテムの定位置(画面高さに対する比率。中央よりやや上)
   var REVEAL_GROW_MS         = 320;  // 粒子が着地してから、その場に画像が浮かび上がるまでの時間
   var REVEAL_RADIUS          = 15;   // 1粒子あたりが画像を写し出す半径(px)。小さめにして繊細な粒立ちを保つ
