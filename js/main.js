@@ -1,6 +1,34 @@
 (function () {
   'use strict';
 
+  // ---- 設定の保存(退場までの待機時間 / 選択中アイテムID) ----
+  // localStorageには数値やID等の軽い設定のみを保存する。画像本体はIndexedDBへ保存する(後述)。
+  var SETTINGS_KEY = 'lfdSettings';
+  var DEFAULT_EXIT_DELAY_MS = 6000; // アプリを新しく開いた際の初期値(演者が保存済みの設定があればそちらを優先)
+  var DEFAULT_ITEM_ID = 'default';  // 同梱のアイテム画像(img/item.png)を表す固定ID
+
+  function loadSettings() {
+    try {
+      var raw = localStorage.getItem(SETTINGS_KEY);
+      return raw ? (JSON.parse(raw) || {}) : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function saveSettings(patch) {
+    var cur = loadSettings();
+    for (var k in patch) {
+      if (Object.prototype.hasOwnProperty.call(patch, k)) cur[k] = patch[k];
+    }
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(cur));
+    } catch (e) {}
+  }
+
+  var savedSettings = loadSettings();
+  var selectedItemId = savedSettings.selectedItemId || DEFAULT_ITEM_ID;
+
   // ---- 設定値 ----
   var DOUBLE_TAP_MAX_INTERVAL = 300; // ダブルタップとみなす最大間隔(ms)
   var TAP_MAX_DURATION  = 380;    // タップとみなす最大接触時間(ms) これを超えたら長押し扱い
@@ -26,7 +54,8 @@
   var REVEAL_START_CT        = 0.62; // アイリス状の写し出しを開き始めるタイミング(進行度ct)
   var REVEAL_END_CT          = 0.95; // 完全に開ききるタイミング(進行度ct)
 
-  var itemExitDelayMs = 2000;    // アイテムをタップしてから退場を始めるまでの間(設定画面で変更可能)
+  // アイテムをタップしてから退場を始めるまでの間(設定画面で変更可能。未設定なら6秒がデフォルト)
+  var itemExitDelayMs = (typeof savedSettings.exitDelayMs === 'number') ? savedSettings.exitDelayMs : DEFAULT_EXIT_DELAY_MS;
   var ITEM_EXIT_SLIDE_MS = 1350; // 画面外へ滑り落ちるまでの時間
 
   var CORNER_SIZE = 90;              // 画面右下のリセット判定エリアの一辺(px)
@@ -57,6 +86,9 @@
   var settingsScreen = document.getElementById('settingsScreen');
   var exitDelayGrid = document.getElementById('exitDelayGrid');
   var closeSettingsBtn = document.getElementById('closeSettingsBtn');
+  var itemGrid = document.getElementById('itemGrid');
+  var addItemBtn = document.getElementById('addItemBtn');
+  var itemFileInput = document.getElementById('itemFileInput');
 
   ITEM_EXIT_DELAY_OPTIONS_S.forEach(function (sec) {
     var btn = document.createElement('button');
@@ -65,6 +97,7 @@
     btn.dataset.ms = Math.round(sec * 1000);
     btn.addEventListener('click', function () {
       itemExitDelayMs = Number(btn.dataset.ms);
+      saveSettings({ exitDelayMs: itemExitDelayMs });
       updateExitDelayButtons();
     });
     exitDelayGrid.appendChild(btn);
@@ -80,11 +113,22 @@
 
   function openSettings() {
     updateExitDelayButtons();
+    renderItemGrid();
     settingsScreen.classList.remove('hidden');
   }
 
   closeSettingsBtn.addEventListener('click', function () {
     settingsScreen.classList.add('hidden');
+  });
+
+  addItemBtn.addEventListener('click', function () {
+    itemFileInput.value = '';
+    itemFileInput.click();
+  });
+
+  itemFileInput.addEventListener('change', function () {
+    var file = itemFileInput.files && itemFileInput.files[0];
+    if (file) addCustomItemFromFile(file);
   });
 
   // ---- 事前準備画面(アプリを開き直すたびに一度だけ表示) ----
@@ -139,6 +183,181 @@
     }
     itemSamplePoints = pts;
   }
+
+  // ---- アイテム画像の複数登録・選択(IndexedDBに画像本体を保存し、再起動後も維持する) ----
+  // 変化演出そのものは itemImg.src が指す画像を使うだけなので、ここでは
+  // 「itemImg.src を差し替える」「差し替えたら形状サンプル点を作り直す」の2点だけを担当する。
+  var ITEM_DB_NAME = 'lfdItemsDB';
+  var ITEM_DB_VERSION = 1;
+  var ITEM_STORE = 'items';
+  var customItems = []; // { id, name, blob, thumbUrl }
+
+  function openItemDB() {
+    return new Promise(function (resolve, reject) {
+      var req = indexedDB.open(ITEM_DB_NAME, ITEM_DB_VERSION);
+      req.onupgradeneeded = function () {
+        var db = req.result;
+        if (!db.objectStoreNames.contains(ITEM_STORE)) {
+          db.createObjectStore(ITEM_STORE, { keyPath: 'id' });
+        }
+      };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+    });
+  }
+
+  function dbPutItem(record) {
+    return openItemDB().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(ITEM_STORE, 'readwrite');
+        tx.objectStore(ITEM_STORE).put({ id: record.id, name: record.name, blob: record.blob });
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+
+  function dbGetAllItems() {
+    return openItemDB().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(ITEM_STORE, 'readonly');
+        var req = tx.objectStore(ITEM_STORE).getAll();
+        req.onsuccess = function () { resolve(req.result || []); };
+        req.onerror = function () { reject(req.error); };
+      });
+    });
+  }
+
+  function dbDeleteItem(id) {
+    return openItemDB().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(ITEM_STORE, 'readwrite');
+        tx.objectStore(ITEM_STORE).delete(id);
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+
+  function findCustomItem(id) {
+    for (var i = 0; i < customItems.length; i++) {
+      if (customItems[i].id === id) return customItems[i];
+    }
+    return null;
+  }
+
+  function getItemSrcById(id) {
+    if (id === DEFAULT_ITEM_ID) return 'img/item.png';
+    var rec = findCustomItem(id);
+    return rec ? rec.thumbUrl : 'img/item.png';
+  }
+
+  // 選択中のアイテムIDに応じて itemImg.src を差し替える。以降は既存の itemImg.onload が
+  // 形状サンプル点の再構築(buildItemSamplePoints)を自動で行う。
+  function applySelectedItem() {
+    itemImgLoaded = false;
+    itemSamplePoints = null;
+    itemImg.src = getItemSrcById(selectedItemId);
+  }
+
+  function selectItem(id) {
+    if (id === selectedItemId) return;
+    selectedItemId = id;
+    saveSettings({ selectedItemId: id });
+    applySelectedItem();
+    renderItemGrid();
+  }
+
+  function renderItemGrid() {
+    if (!itemGrid) return;
+    itemGrid.innerHTML = '';
+
+    var entries = [{ id: DEFAULT_ITEM_ID, thumbUrl: 'img/item.png', builtin: true }];
+    for (var i = 0; i < customItems.length; i++) {
+      entries.push({ id: customItems[i].id, thumbUrl: customItems[i].thumbUrl, builtin: false });
+    }
+
+    entries.forEach(function (entry) {
+      var wrap = document.createElement('div');
+      wrap.className = 'itemThumbWrap';
+
+      var btn = document.createElement('button');
+      btn.className = 'itemThumb' + (entry.id === selectedItemId ? ' selected' : '');
+      var img = document.createElement('img');
+      img.src = entry.thumbUrl;
+      btn.appendChild(img);
+      btn.addEventListener('click', function () { selectItem(entry.id); });
+      wrap.appendChild(btn);
+
+      if (!entry.builtin) {
+        var del = document.createElement('button');
+        del.className = 'itemDeleteBadge';
+        del.textContent = '×';
+        del.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (window.confirm('この画像を削除しますか？')) {
+            deleteCustomItem(entry.id);
+          }
+        });
+        wrap.appendChild(del);
+      }
+
+      itemGrid.appendChild(wrap);
+    });
+  }
+
+  function addCustomItemFromFile(file) {
+    var allowed = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+    if (allowed.indexOf(file.type) === -1) {
+      window.alert('対応していない画像形式です(PNG / JPEG / WebPをお使いください)');
+      return;
+    }
+    var id = 'item_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    var record = { id: id, name: file.name, blob: file };
+    dbPutItem(record).then(function () {
+      record.thumbUrl = URL.createObjectURL(record.blob);
+      customItems.push(record);
+      selectItem(id); // 追加したその場ですぐ本番へ反映されるよう、追加したアイテムを自動で選択状態にする
+      renderItemGrid();
+    }).catch(function () {
+      window.alert('画像の追加に失敗しました');
+    });
+  }
+
+  function deleteCustomItem(id) {
+    dbDeleteItem(id).then(function () {
+      var rec = findCustomItem(id);
+      if (rec && rec.thumbUrl) URL.revokeObjectURL(rec.thumbUrl);
+      customItems = customItems.filter(function (it) { return it.id !== id; });
+      if (selectedItemId === id) {
+        selectedItemId = DEFAULT_ITEM_ID;
+        saveSettings({ selectedItemId: selectedItemId });
+        applySelectedItem();
+      }
+      renderItemGrid();
+    }).catch(function () {
+      window.alert('画像の削除に失敗しました');
+    });
+  }
+
+  // 起動時に保存済みのアイテム画像を読み込み、必要なら選択中の画像を差し替える
+  dbGetAllItems().then(function (records) {
+    customItems = records.map(function (r) {
+      r.thumbUrl = URL.createObjectURL(r.blob);
+      return r;
+    });
+    if (selectedItemId !== DEFAULT_ITEM_ID) {
+      if (findCustomItem(selectedItemId)) {
+        applySelectedItem();
+      } else {
+        selectedItemId = DEFAULT_ITEM_ID;
+        saveSettings({ selectedItemId: selectedItemId });
+      }
+    }
+    renderItemGrid();
+  }).catch(function () {
+    // IndexedDBが使えない環境では同梱のデフォルト画像のみで動作を続ける
+  });
 
   // 光の粒子を軽く描くための下地スプライト(毎フレームのグラデーション生成コストを避ける)。
   // 中心は必ず白飛びさせ、ベースの白青い光の質感を保ったまま、ごく一部だけ色味を混ぜる。
