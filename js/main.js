@@ -713,13 +713,13 @@
   }
 
   function spawnBurstSparkles(x, y) {
-    var n = 100;
+    // 発射点に「跡」として残って見えないよう、個数を絞り・すぐ散る速度にし・寿命も短くする
+    // (以前は寿命が最大1.4秒あり、初速を上げても消えるまでの間その場に薄く残って見えていた)
+    var n = 55;
     for (var i = 0; i < n; i++) {
       var a = rand(0, Math.PI * 2);
-      // 最低速度が低すぎると、その場でほぼ動かないまま長く残る粒子が重なり、
-      // 発射点に白い染みのように見えてしまうため、確実に散っていく速度を確保する
-      var sp = rand(220, 520);
-      addSparkle(x, y, Math.cos(a) * sp, Math.sin(a) * sp, rand(450, 1400));
+      var sp = rand(260, 560);
+      addSparkle(x, y, Math.cos(a) * sp, Math.sin(a) * sp, rand(150, 420));
     }
   }
 
