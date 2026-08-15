@@ -187,7 +187,11 @@
     });
   }
 
-  // 実質的に透明でないピクセルのバウンディングボックスを求める(結果の余白トリミング用)
+  // 実質的に透明でないピクセルのバウンディングボックスを求める(結果の余白トリミング用)。
+  // AIマスクは背景のはずの場所にもごく薄い(ほぼ見えない)アルファがうっすら乗ることがあり、
+  // 閾値が低すぎるとそれを拾って余白がほとんど切り取られなくなる(写真の中の元の位置のまま
+  // 小さく表示される不具合につながる)。多少濃い目の閾値にして、はっきり写っている部分だけを
+  // 境界の判定に使う(実際の合成に使うアルファ値そのものは変更しないので、縁の柔らかさは保たれる)。
   function computeAlphaBoundingBox(canvas) {
     var w = canvas.width, h = canvas.height;
     var data = canvas.getContext('2d').getImageData(0, 0, w, h).data;
@@ -195,7 +199,7 @@
     for (var y = 0; y < h; y++) {
       var rowBase = y * w;
       for (var x = 0; x < w; x++) {
-        if (data[(rowBase + x) * 4 + 3] > 8) {
+        if (data[(rowBase + x) * 4 + 3] > 60) {
           if (x < minX) minX = x;
           if (x > maxX) maxX = x;
           if (y < minY) minY = y;
