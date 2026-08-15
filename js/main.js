@@ -842,14 +842,17 @@
     orb.trail.push({ x: orb.x, y: orb.y, t: now });
     while (orb.trail.length && now - orb.trail[0].t > 700) orb.trail.shift();
 
-    // 軌跡に沿ってキラキラを残す(しつこく多めに)
+    // 軌跡に沿ってキラキラを残す(しつこく多めに)。
+    // このキラキラはほぼ初速を持たずその場にとどまるため、寿命が軌跡ポイントの保持時間(700ms)より
+    // 長いと、発射直後の急加速で球が遠くへ飛び去った後も発射点付近にだけ古い粒が残ってしまう。
+    // そのため寿命は軌跡と同程度以下に抑える。
     var sp = Math.hypot(orb.vx, orb.vy);
     var rate = Math.min(0.98, 0.32 + sp / 450);
     if (Math.random() < rate) {
-      addSparkle(orb.x, orb.y, -orb.vx * 0.05 + rand(-35, 35), -orb.vy * 0.05 + rand(-35, 35), rand(500, 1300));
+      addSparkle(orb.x, orb.y, -orb.vx * 0.05 + rand(-35, 35), -orb.vy * 0.05 + rand(-35, 35), rand(220, 550));
     }
     if (Math.random() < rate * 0.6) {
-      addSparkle(orb.x + rand(-6, 6), orb.y + rand(-6, 6), -orb.vx * 0.03 + rand(-45, 45), -orb.vy * 0.03 + rand(-45, 45), rand(400, 900));
+      addSparkle(orb.x + rand(-6, 6), orb.y + rand(-6, 6), -orb.vx * 0.03 + rand(-45, 45), -orb.vy * 0.03 + rand(-45, 45), rand(180, 400));
     }
   }
 
@@ -903,6 +906,9 @@
         item = { x: transformInfo.cx, y: getItemRestY(), bornAt: now };
         orb = null;
         transformInfo = null;
+        // 渦を巻く間や仕上げの間に発生させ続けたキラキラ粒子(sparkles)は状態が変わっても
+        // 自動では消えないため、ここで消しておかないとアイテムの周りに漂って残って見える
+        sparkles.length = 0;
         state = 'item';
       }
     }
