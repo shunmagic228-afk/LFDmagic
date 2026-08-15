@@ -709,7 +709,20 @@
 
   // ---- キラキラ粒子 ----
   function addSparkle(x, y, vx, vy, life) {
-    sparkles.push({ x: x, y: y, vx: vx, vy: vy, born: performance.now(), life: life, size: rand(1.0, 4.2) });
+    sparkles.push({
+      x: x, y: y, vx: vx, vy: vy, born: performance.now(), life: life, size: rand(1.0, 4.2),
+      // 真ん丸だと粒立ちが目立つため、粒ごとに縦横をわずかに潰していびつな形にする
+      squashX: rand(0.6, 1.15), squashY: rand(0.6, 1.15)
+    });
+  }
+
+  // 残っているキラキラ粒子を、今から指定ミリ秒以内に消えるよう寿命を縮める(急に消さずふわっと消す)
+  function fadeOutSparklesQuickly(now, ms) {
+    for (var i = 0; i < sparkles.length; i++) {
+      var s = sparkles[i];
+      var elapsed = now - s.born;
+      if (s.life - elapsed > ms) s.life = elapsed + ms;
+    }
   }
 
   function spawnBurstSparkles(x, y) {
@@ -739,12 +752,17 @@
     if (t >= 1) return;
     var alpha = (1 - t) * (1 - t); // ふんわり減衰(イーズアウト)
     var r = s.size * 4;
-    var g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r);
-    g.addColorStop(0, 'rgba(255,255,255,' + (0.9 * alpha) + ')');
-    g.addColorStop(0.4, 'rgba(190,220,255,' + (0.5 * alpha) + ')');
+    var g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+    // 以前より控えめな透明度にし、万一残っても薄く感じるようにする
+    g.addColorStop(0, 'rgba(255,255,255,' + (0.62 * alpha) + ')');
+    g.addColorStop(0.4, 'rgba(190,220,255,' + (0.32 * alpha) + ')');
     g.addColorStop(1, 'rgba(190,220,255,0)');
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.scale(s.squashX, s.squashY); // 真ん丸すぎないよう粒ごとにわずかに潰す
     ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
   }
 
   // ---- 光の軌跡(なめらかな光の尾) ----
@@ -907,8 +925,10 @@
         orb = null;
         transformInfo = null;
         // 渦を巻く間や仕上げの間に発生させ続けたキラキラ粒子(sparkles)は状態が変わっても
-        // 自動では消えないため、ここで消しておかないとアイテムの周りに漂って残って見える
-        sparkles.length = 0;
+        // 自動では消えないため、そのままだとアイテムの周りに漂って残って見える。
+        // かといって配列を即座に空にすると「カクッ」と不自然に消えてしまうため、
+        // 残っている分だけ寿命を縮めて短時間でふわっとフェードアウトさせる
+        fadeOutSparklesQuickly(now, 180);
         state = 'item';
       }
     }
@@ -946,7 +966,9 @@
         tStart: rand(0, 0.08),
         dur: rand(0.68, 0.82),
         size: rand(2.5, 6.5),
-        sprite: pickParticleSprite()
+        sprite: pickParticleSprite(),
+        // 真ん丸だと粒立ちが目立つため、粒ごとに縦横をわずかに潰していびつな形にする
+        squashX: rand(0.6, 1.15), squashY: rand(0.6, 1.15)
       });
     }
     transformInfo.particles = particles;
@@ -1234,8 +1256,9 @@
             var ps = getParticleState(plist[pi], ct);
             if (ps.alpha <= 0.01) continue;
             var d = plist[pi].size;
-            ctx.globalAlpha = ps.alpha;
-            ctx.drawImage(plist[pi].sprite, ps.x - d, ps.y - d, d * 2, d * 2);
+            var dw = d * plist[pi].squashX, dh = d * plist[pi].squashY; // 真ん丸すぎないよう楕円に伸縮
+            ctx.globalAlpha = ps.alpha * 0.7; // 以前より控えめな透明度にする
+            ctx.drawImage(plist[pi].sprite, ps.x - dw, ps.y - dh, dw * 2, dh * 2);
           }
           ctx.restore();
         }
