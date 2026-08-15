@@ -1076,7 +1076,11 @@
     if (item.sliding) {
       var et = Math.min(1, (now - item.exitStartAt) / ITEM_EXIT_SLIDE_MS);
       var e = et * et; // すーっと加速しながら画面外へ
-      item.x = item.exitFromX;
+      // 漂っている間に左右へ寄っていても、退場が始まったら早めに中心へ寄せてからまっすぐ
+      // 落としていく(退場のたびに画面中心から出ていったように見せるため)
+      var centerEase = Math.min(1, et / 0.4);
+      centerEase = 1 - Math.pow(1 - centerEase, 3); // イーズアウト
+      item.x = item.exitFromX + (W / 2 - item.exitFromX) * centerEase;
       item.y = item.exitFromY + (H + ITEM_DISPLAY_HEIGHT * itemScale - item.exitFromY) * e;
       if (et >= 1) {
         item = null;
