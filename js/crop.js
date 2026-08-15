@@ -31,7 +31,7 @@
   var cropUndoBtn = document.getElementById('cropUndoBtn');
 
   var SOURCE_MAX_SIDE = 1600;   // 取り込み時にここまで縮小(表示・保存に十分な解像度を保ちつつ動作を軽くする)
-  var AUTO_WORK_MAX_SIDE = 480; // 自動切り抜き(境界フラッドフィル)の計算用の縮小サイズ
+  var AUTO_WORK_MAX_SIDE = 640; // 自動切り抜き(境界フラッドフィル)の計算用の縮小サイズ
 
   // ==== 共通ユーティリティ ====
 
@@ -201,7 +201,17 @@
     var wScale = Math.min(1, AUTO_WORK_MAX_SIDE / Math.max(sourceCanvas.width, sourceCanvas.height));
     autoWorkCanvas.width = Math.max(1, Math.round(sourceCanvas.width * wScale));
     autoWorkCanvas.height = Math.max(1, Math.round(sourceCanvas.height * wScale));
-    autoWorkCanvas.getContext('2d').drawImage(sourceCanvas, 0, 0, autoWorkCanvas.width, autoWorkCanvas.height);
+    var wctx = autoWorkCanvas.getContext('2d');
+    wctx.drawImage(sourceCanvas, 0, 0, autoWorkCanvas.width, autoWorkCanvas.height);
+
+    // 実写真は圧縮ノイズや反射で隣接ピクセルの色が細かくジャンプしやすく、それが下の
+    // 境界フラッドフィルの「連鎖」を途中で断ち切ってノイズの孤立点を生む原因になる。
+    // ぼかし(blur)は物体内部の均一な色と背景をなだらかに繋いでしまい、塗りつぶしが
+    // 物体の中まで漏れ出す事故につながるため使わない。代わりに「メディアンフィルタ」で、
+    // 本物の境界(急な色の変化)は保ったまま、孤立したノイズ画素だけを取り除く(1回だけ実行)。
+    var wImageData = wctx.getImageData(0, 0, autoWorkCanvas.width, autoWorkCanvas.height);
+    var denoised = medianFilter3x3(wImageData.data, autoWorkCanvas.width, autoWorkCanvas.height);
+    wctx.putImageData(new ImageData(denoised, autoWorkCanvas.width, autoWorkCanvas.height), 0, 0);
 
     cropAutoScreen.classList.remove('hidden');
     autoRunning = true;
@@ -217,6 +227,47 @@
     autoSourceCanvas = null;
     autoWorkCanvas = null;
     autoMaskCanvas = null;
+  }
+
+  // 3x3のメディアン(中央値)フィルタ。平均化(ぼかし)と違って本物の境界を鈍らせずに、
+  // 周囲から浮いた1ピクセル単位のノイズだけを取り除ける(エッジ保存型のノイズ除去)。
+  function medianFilter3x3(data, w, h) {
+    var out = new Uint8ClampedArray(data.length);
+    var wr = new Uint8Array(9), wg = new Uint8Array(9), wb = new Uint8Array(9);
+
+    function insertionSort9(arr, n) {
+      for (var i = 1; i < n; i++) {
+        var v = arr[i], j = i - 1;
+        while (j >= 0 && arr[j] > v) { arr[j + 1] = arr[j]; j--; }
+        arr[j + 1] = v;
+      }
+    }
+
+    for (var y = 0; y < h; y++) {
+      var y0 = y > 0 ? y - 1 : 0, y1 = y < h - 1 ? y + 1 : h - 1;
+      for (var x = 0; x < w; x++) {
+        var x0 = x > 0 ? x - 1 : 0, x1 = x < w - 1 ? x + 1 : w - 1;
+        var n = 0;
+        for (var ny = y0; ny <= y1; ny++) {
+          var rowBase = ny * w;
+          for (var nx = x0; nx <= x1; nx++) {
+            var idx = (rowBase + nx) * 4;
+            wr[n] = data[idx]; wg[n] = data[idx + 1]; wb[n] = data[idx + 2];
+            n++;
+          }
+        }
+        insertionSort9(wr, n);
+        insertionSort9(wg, n);
+        insertionSort9(wb, n);
+        var mid = n >> 1;
+        var oi = (y * w + x) * 4;
+        out[oi] = wr[mid];
+        out[oi + 1] = wg[mid];
+        out[oi + 2] = wb[mid];
+        out[oi + 3] = 255;
+      }
+    }
+    return out;
   }
 
   function recomputeAutoMask() {
@@ -265,18 +316,52 @@
       }
     }
 
+    // フラッドフィルの連鎖が局所的なノイズで途切れて残った孤立点(背景中の消し残し/被写体中の
+    // 誤消去)を、3x3の多数決フィルタで2回かけて掃除する(いわゆるモルフォロジー的なオープニング)
+    var cleaned = majorityFilter(visited, w, h);
+    cleaned = majorityFilter(cleaned, w, h);
+
+    var rawMaskCanvas = document.createElement('canvas');
+    rawMaskCanvas.width = w;
+    rawMaskCanvas.height = h;
+    var rawCtx = rawMaskCanvas.getContext('2d');
+    var maskData = rawCtx.createImageData(w, h);
+    var md = maskData.data;
+    for (var p = 0; p < w * h; p++) {
+      var a = cleaned[p] === 1 ? 0 : 255;
+      md[p * 4] = 255; md[p * 4 + 1] = 255; md[p * 4 + 2] = 255; md[p * 4 + 3] = a;
+    }
+    rawCtx.putImageData(maskData, 0, 0);
+
+    // マスクの境界を1pxだけぼかし、ギザギザした輪郭を滑らかにする
     var maskCanvas = document.createElement('canvas');
     maskCanvas.width = w;
     maskCanvas.height = h;
     var maskCtx = maskCanvas.getContext('2d');
-    var maskData = maskCtx.createImageData(w, h);
-    var md = maskData.data;
-    for (var p = 0; p < w * h; p++) {
-      var a = visited[p] === 1 ? 0 : 255;
-      md[p * 4] = 255; md[p * 4 + 1] = 255; md[p * 4 + 2] = 255; md[p * 4 + 3] = a;
-    }
-    maskCtx.putImageData(maskData, 0, 0);
+    maskCtx.filter = 'blur(1px)';
+    maskCtx.drawImage(rawMaskCanvas, 0, 0);
     return maskCanvas;
+  }
+
+  // 3x3近傍の多数決で0/1を塗り替え、周囲から浮いた孤立ピクセルを消す(背景/被写体どちらの誤判定にも効く)
+  function majorityFilter(src, w, h) {
+    var out = new Uint8Array(w * h);
+    for (var y = 0; y < h; y++) {
+      var y0 = y > 0 ? y - 1 : 0, y1 = y < h - 1 ? y + 1 : h - 1;
+      for (var x = 0; x < w; x++) {
+        var x0 = x > 0 ? x - 1 : 0, x1 = x < w - 1 ? x + 1 : w - 1;
+        var bgCount = 0;
+        for (var ny = y0; ny <= y1; ny++) {
+          var rowBase = ny * w;
+          for (var nx = x0; nx <= x1; nx++) {
+            if (src[rowBase + nx] === 1) bgCount++;
+          }
+        }
+        var total = (y1 - y0 + 1) * (x1 - x0 + 1);
+        out[y * w + x] = (bgCount > total / 2) ? 1 : 0;
+      }
+    }
+    return out;
   }
 
   function renderAutoPreview() {
