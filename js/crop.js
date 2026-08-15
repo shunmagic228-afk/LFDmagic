@@ -19,6 +19,8 @@
   var cropAutoBackBtn = document.getElementById('cropAutoBackBtn');
   var cropAutoDoneBtn = document.getElementById('cropAutoDoneBtn');
   var cropToleranceSlider = document.getElementById('cropToleranceSlider');
+  var cropSliderRow = document.getElementById('cropSliderRow');
+  var cropAutoStatus = document.getElementById('cropAutoStatus');
 
   var cropManualScreen = document.getElementById('cropManualScreen');
   var cropManualCanvas = document.getElementById('cropManualCanvas');
@@ -31,7 +33,133 @@
   var cropUndoBtn = document.getElementById('cropUndoBtn');
 
   var SOURCE_MAX_SIDE = 1600;   // 取り込み時にここまで縮小(表示・保存に十分な解像度を保ちつつ動作を軽くする)
-  var AUTO_WORK_MAX_SIDE = 640; // 自動切り抜き(境界フラッドフィル)の計算用の縮小サイズ
+  var AUTO_WORK_MAX_SIDE = 640; // 自動切り抜き(フォールバックの境界フラッドフィル)の計算用の縮小サイズ
+
+  // ==== AIによる自動切り抜き(端末上で完結。写真をどこにも送信しない) ====
+  // U^2-Netp(軽量版)をONNX Runtime Web上で動かし、被写体を認識して背景を判定する。
+  // 出典: U^2-Net (Qin et al., Apache License 2.0) / モデル配布元 rembg (MIT License)。
+  // ライブラリ・モデル本体はこのアプリの起動時には一切読み込まず、「切り抜き」→「自動切り抜き」を
+  // 実際に開いた時にだけ読み込む(本番で使う光球演出の起動の軽さには影響しない)。
+  var ORT_JS_URL = 'js/vendor/ort.min.js';
+  var ORT_WASM_DIR = 'js/vendor/';
+  var AI_MODEL_URL = 'models/u2netp.onnx';
+  var AI_INPUT_SIZE = 320;
+  var AI_INPUT_NAME = 'input.1';
+  var AI_MEAN = [0.485, 0.456, 0.406];
+  var AI_STD = [0.229, 0.224, 0.225];
+
+  var ortLoadPromise = null;
+  var aiSessionPromise = null;
+
+  function loadOrtLibrary() {
+    if (window.ort) return Promise.resolve(window.ort);
+    if (ortLoadPromise) return ortLoadPromise;
+    ortLoadPromise = new Promise(function (resolve, reject) {
+      var script = document.createElement('script');
+      script.src = ORT_JS_URL;
+      script.onload = function () {
+        if (window.ort) resolve(window.ort);
+        else reject(new Error('ort not found after load'));
+      };
+      script.onerror = function () { reject(new Error('failed to load ort.min.js')); };
+      document.head.appendChild(script);
+    });
+    return ortLoadPromise;
+  }
+
+  function loadAiSession() {
+    if (aiSessionPromise) return aiSessionPromise;
+    aiSessionPromise = loadOrtLibrary().then(function (ort) {
+      ort.env.wasm.wasmPaths = new URL(ORT_WASM_DIR, document.baseURI).href;
+      return ort.InferenceSession.create(AI_MODEL_URL, { executionProviders: ['wasm'] });
+    });
+    return aiSessionPromise;
+  }
+
+  // sourceCanvas(切り抜き対象の写真)からAIモデル用の入力テンソルを作る。
+  // rembgのU^2-Net前処理と同じ手順: 320x320にリサイズ→ (画素値/画像内の最大値) →
+  // チャンネルごとに正規化 → CHW配列化。
+  function buildAiInputTensor(ort, sourceCanvas) {
+    var size = AI_INPUT_SIZE;
+    var off = document.createElement('canvas');
+    off.width = size;
+    off.height = size;
+    var octx = off.getContext('2d');
+    octx.drawImage(sourceCanvas, 0, 0, size, size);
+    var data = octx.getImageData(0, 0, size, size).data;
+
+    var maxVal = 1;
+    var n = size * size;
+    for (var p = 0; p < n; p++) {
+      var idx = p * 4;
+      if (data[idx] > maxVal) maxVal = data[idx];
+      if (data[idx + 1] > maxVal) maxVal = data[idx + 1];
+      if (data[idx + 2] > maxVal) maxVal = data[idx + 2];
+    }
+
+    var chw = new Float32Array(3 * n);
+    for (var i = 0; i < n; i++) {
+      var di = i * 4;
+      chw[i] = ((data[di] / maxVal) - AI_MEAN[0]) / AI_STD[0];
+      chw[n + i] = ((data[di + 1] / maxVal) - AI_MEAN[1]) / AI_STD[1];
+      chw[2 * n + i] = ((data[di + 2] / maxVal) - AI_MEAN[2]) / AI_STD[2];
+    }
+    return new ort.Tensor('float32', chw, [1, 3, size, size]);
+  }
+
+  // モデルの出力(320x320・値の範囲は不定)を0-1に正規化し、指定した解像度のアルファマスクcanvasにする。
+  function aiOutputToMaskCanvas(outputTensor, targetW, targetH) {
+    var size = AI_INPUT_SIZE;
+    var src = outputTensor.data;
+    var n = size * size;
+    var mn = Infinity, mx = -Infinity;
+    for (var i = 0; i < n; i++) {
+      var v = src[i];
+      if (v < mn) mn = v;
+      if (v > mx) mx = v;
+    }
+    var range = Math.max(1e-6, mx - mn);
+
+    var small = document.createElement('canvas');
+    small.width = size;
+    small.height = size;
+    var sctx = small.getContext('2d');
+    var imgData = sctx.createImageData(size, size);
+    var d = imgData.data;
+    for (var p = 0; p < n; p++) {
+      var norm = (src[p] - mn) / range;
+      if (norm < 0) norm = 0; else if (norm > 1) norm = 1;
+      var di = p * 4;
+      d[di] = 255; d[di + 1] = 255; d[di + 2] = 255; d[di + 3] = Math.round(norm * 255);
+    }
+    sctx.putImageData(imgData, 0, 0);
+
+    var out = document.createElement('canvas');
+    out.width = targetW;
+    out.height = targetH;
+    out.getContext('2d').drawImage(small, 0, 0, targetW, targetH);
+    return out;
+  }
+
+  // AIで被写体マスクを作る。処理中の状態(準備中/解析中)をコールバックで知らせる。
+  function runAiAutoMask(sourceCanvas, targetW, targetH, onStatus) {
+    var needsInit = !aiSessionPromise;
+    if (onStatus) onStatus(needsInit ? 'AIを準備中…\n(初回のみ数秒〜十数秒かかります)' : 'AIで解析中…');
+    var ortLib;
+    return loadOrtLibrary().then(function (ort) {
+      ortLib = ort;
+      return loadAiSession();
+    }).then(function (session) {
+      if (onStatus) onStatus('AIで解析中…');
+      var input = buildAiInputTensor(ortLib, sourceCanvas);
+      var feeds = {};
+      feeds[AI_INPUT_NAME] = input;
+      return session.run(feeds).then(function (results) {
+        var outputTensor = results[session.outputNames[0]];
+        return aiOutputToMaskCanvas(outputTensor, targetW, targetH);
+      });
+    });
+  }
 
   // ==== 共通ユーティリティ ====
 
@@ -187,16 +315,64 @@
   });
 
   // ================= 自動切り抜き =================
-  // 画像の外周(境界)から色の近い部分をたどって背景とみなす「境界フラッドフィル」方式。
-  // タップ操作は不要で、写真を選んだ時点で自動的に実行される。識別範囲(許容誤差)はスライダーで調整可能。
+  // 第一候補: AIによる被写体認識(runAiAutoMask、端末上で完結)。
+  // AIが使えない場合(読み込み失敗・非対応ブラウザ等)だけ、画像の外周から色をたどる
+  // 「境界フラッドフィル」方式にフォールバックする(この場合のみ識別範囲スライダーを表示)。
   var autoSourceCanvas = null;
-  var autoWorkCanvas = null;  // 判定用の縮小コピー
-  var autoMaskCanvas = null;  // 縮小サイズのアルファマスク(白=残す/透明=切り抜く)
+  var autoWorkCanvas = null;   // フォールバック判定用の縮小コピー
+  var autoMaskCanvas = null;   // アルファマスク(白=残す/透明=切り抜く。解像度は問わずプレビュー時に伸縮する)
   var autoRunning = false;
   var autoRenderScheduled = false;
+  var autoEngine = null; // 'ai' | 'classical'
+
+  function setAutoStatus(text) {
+    if (!text) {
+      cropAutoStatus.classList.add('hidden');
+      cropAutoStatus.textContent = '';
+    } else {
+      cropAutoStatus.textContent = text;
+      cropAutoStatus.classList.remove('hidden');
+    }
+  }
 
   function startAutoScreen(sourceCanvas) {
     autoSourceCanvas = sourceCanvas;
+    autoMaskCanvas = null;
+    autoEngine = null;
+    cropSliderRow.classList.add('hidden');
+    cropAutoDoneBtn.disabled = true;
+
+    cropAutoScreen.classList.remove('hidden');
+    autoRunning = true;
+    requestAnimationFrame(function () {
+      setupCanvasDPR(cropAutoCanvas);
+      renderAutoPreview();
+    });
+
+    var maskW = Math.max(1, Math.round(sourceCanvas.width * Math.min(1, AUTO_WORK_MAX_SIDE / Math.max(sourceCanvas.width, sourceCanvas.height))));
+    var maskH = Math.max(1, Math.round(sourceCanvas.height * Math.min(1, AUTO_WORK_MAX_SIDE / Math.max(sourceCanvas.width, sourceCanvas.height))));
+
+    runAiAutoMask(sourceCanvas, maskW, maskH, setAutoStatus).then(function (maskCanvas) {
+      if (!autoRunning || autoSourceCanvas !== sourceCanvas) return; // 待っている間に画面を離れた/やり直した場合は捨てる
+      autoEngine = 'ai';
+      autoMaskCanvas = maskCanvas;
+      setAutoStatus(null);
+      cropAutoDoneBtn.disabled = false;
+      renderAutoPreview();
+    }).catch(function (err) {
+      if (!autoRunning || autoSourceCanvas !== sourceCanvas) return;
+      // AIが使えない環境(読み込み失敗・WebAssembly非対応など)は、これまでの色ベース方式へ自動的に切り替える
+      autoEngine = 'classical';
+      setupClassicalWorkCanvas(sourceCanvas);
+      cropSliderRow.classList.remove('hidden');
+      recomputeAutoMask();
+      setAutoStatus(null);
+      cropAutoDoneBtn.disabled = false;
+      renderAutoPreview();
+    });
+  }
+
+  function setupClassicalWorkCanvas(sourceCanvas) {
     autoWorkCanvas = document.createElement('canvas');
     var wScale = Math.min(1, AUTO_WORK_MAX_SIDE / Math.max(sourceCanvas.width, sourceCanvas.height));
     autoWorkCanvas.width = Math.max(1, Math.round(sourceCanvas.width * wScale));
@@ -212,14 +388,6 @@
     var wImageData = wctx.getImageData(0, 0, autoWorkCanvas.width, autoWorkCanvas.height);
     var denoised = medianFilter3x3(wImageData.data, autoWorkCanvas.width, autoWorkCanvas.height);
     wctx.putImageData(new ImageData(denoised, autoWorkCanvas.width, autoWorkCanvas.height), 0, 0);
-
-    cropAutoScreen.classList.remove('hidden');
-    autoRunning = true;
-    requestAnimationFrame(function () {
-      setupCanvasDPR(cropAutoCanvas);
-      recomputeAutoMask();
-      renderAutoPreview();
-    });
   }
 
   function teardownAuto() {
@@ -227,6 +395,10 @@
     autoSourceCanvas = null;
     autoWorkCanvas = null;
     autoMaskCanvas = null;
+    autoEngine = null;
+    setAutoStatus(null);
+    cropSliderRow.classList.add('hidden');
+    cropAutoDoneBtn.disabled = false;
   }
 
   // 3x3のメディアン(中央値)フィルタ。平均化(ぼかし)と違って本物の境界を鈍らせずに、

@@ -128,6 +128,16 @@ html, body {
   font-family: inherit;
 }
 
+#settingsScreen .closeBtn.decideBtn {
+  min-width: 160px;
+  padding: 12px 30px;
+  border: none;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+}
+
 .hiddenFileInput {
   display: none;
 }
@@ -309,6 +319,10 @@ html, body {
   margin-left: auto;
 }
 
+.cropToolBtn:disabled {
+  opacity: 0.4;
+}
+
 .cropModeToggle {
   display: flex;
   gap: 4px;
@@ -355,6 +369,26 @@ html, body {
   touch-action: none;
 }
 
+.cropAutoStatus {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  box-sizing: border-box;
+  font-size: 14px;
+  line-height: 1.8;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.cropAutoStatus.hidden {
+  display: none;
+}
+
 .cropSliderRow {
   flex: 0 0 auto;
   display: flex;
@@ -363,6 +397,10 @@ html, body {
   padding: 14px 20px;
   padding-bottom: max(14px, env(safe-area-inset-bottom));
   box-sizing: border-box;
+}
+
+.cropSliderRow.hidden {
+  display: none;
 }
 
 .cropSliderLabel {

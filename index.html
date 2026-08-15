@@ -30,7 +30,7 @@
   <div class="settingsLabel">アイテム選択</div>
   <div class="itemGrid" id="itemGrid"></div>
 
-  <button class="closeBtn" id="closeSettingsBtn">閉じる</button>
+  <button class="closeBtn decideBtn" id="closeSettingsBtn">決定</button>
 </div>
 
 <div id="cropEntryScreen" class="hidden cropOverlay">
@@ -60,8 +60,9 @@
   </div>
   <div class="cropCanvasWrap">
     <canvas id="cropAutoCanvas"></canvas>
+    <div class="cropAutoStatus hidden" id="cropAutoStatus"></div>
   </div>
-  <div class="cropSliderRow">
+  <div class="cropSliderRow hidden" id="cropSliderRow">
     <span class="cropSliderLabel">背景の識別範囲</span>
     <input type="range" id="cropToleranceSlider" min="2" max="90" value="28">
   </div>
