@@ -1199,8 +1199,13 @@
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (state === 'active' || state === 'transforming') {
-      // 完全な黒ではなく薄い黒で塗ることで、光の軌跡がふんわり残る
-      ctx.fillStyle = 'rgba(0,0,0,' + TRAIL_FADE_ALPHA + ')';
+      // 完全な黒ではなく薄い黒で塗ることで、光の軌跡がふんわり残る。
+      // TRAIL_FADE_ALPHAは60fps基準の1フレームあたりの値なので、実際のフレーム間隔(dt)に
+      // 合わせて補正する。これをしないと、画面収録中など端末の描画が遅くなった時に
+      // 「1フレームごとの薄まり方」は同じでもフレーム数自体が減るため、実時間では
+      // 消えるまでに何倍も時間がかかってしまう(発射点の跡が長く残って見える主因だった)。
+      var fadeAlpha = 1 - Math.pow(1 - TRAIL_FADE_ALPHA, dt * 60);
+      ctx.fillStyle = 'rgba(0,0,0,' + fadeAlpha + ')';
     } else {
       ctx.fillStyle = '#000';
     }
