@@ -23,8 +23,8 @@
   var ITEM_DISPLAY_HEIGHT    = 420;  // アイテム画像の表示高さ(CSS px)
   var ITEM_HIT_RADIUS        = 170;  // アイテムにタップで触れたと判定する半径(px)
   var ITEM_REST_Y_RATIO      = 0.42; // アイテムの定位置(画面高さに対する比率。中央よりやや上)
-  var REVEAL_GROW_MS         = 220;  // 粒子が着地してから、その場に画像が浮かび上がるまでの時間
-  var REVEAL_RADIUS          = 9;    // 1粒子あたりが画像を写し出す半径(px)。粒子数を増やした分さらに小さくして繊細に
+  var REVEAL_START_CT        = 0.62; // アイリス状の写し出しを開き始めるタイミング(進行度ct)
+  var REVEAL_END_CT          = 0.95; // 完全に開ききるタイミング(進行度ct)
 
   var itemExitDelayMs = 2000;    // アイテムをタップしてから退場を始めるまでの間(設定画面で変更可能)
   var ITEM_EXIT_SLIDE_MS = 1350; // 画面外へ滑り落ちるまでの時間
@@ -669,9 +669,9 @@
     }
     transformInfo.particles = particles;
 
-    // 画像を写し出すマスク用キャンバスを、表示サイズ+粒子の写し出し半径ぶんの余白で用意する
+    // 画像を写し出すマスク用キャンバスを、表示サイズ+光の輪ぶんの余白で用意する
     var ratio = itemImg.naturalWidth / itemImg.naturalHeight;
-    var pad = REVEAL_RADIUS * 2 + 10;
+    var pad = 24;
     var mw = Math.ceil(ITEM_DISPLAY_HEIGHT * ratio + pad);
     var mh = Math.ceil(ITEM_DISPLAY_HEIGHT + pad);
     maskCanvas.width = mw;
@@ -711,34 +711,31 @@
     };
   }
 
-  // 着地済みの粒子の場所ごとに円形の「窓」を書き足し、そこだけ画像が見えるマスクを作る
+  // 粒子が集まりきる地点を中心に、光が円形にじわっと開いてアイテムを写し出す(アイリス状の見せ方)
   function renderRevealMask(ct) {
-    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-    var plist = transformInfo.particles;
-    if (!plist) return;
-    var cx0 = maskCanvas.width / 2, cy0 = maskCanvas.height / 2;
-    var growCt = REVEAL_GROW_MS / TRANSFORM_CROSSFADE_MS;
-    for (var i = 0; i < plist.length; i++) {
-      var p = plist[i];
-      var landedCt = p.tStart + p.dur;
-      if (ct <= landedCt) continue;
-      var grow = Math.min(1, (ct - landedCt) / growCt);
-      var r = REVEAL_RADIUS * easeOutCubic(grow);
-      if (r <= 1) continue;
-      var mx = cx0 + p.localX, my = cy0 + p.localY;
-      var g = maskCtx.createRadialGradient(mx, my, 0, mx, my, r);
-      g.addColorStop(0, 'rgba(255,255,255,1)');
-      g.addColorStop(0.7, 'rgba(255,255,255,1)');
-      g.addColorStop(1, 'rgba(255,255,255,0)');
-      maskCtx.fillStyle = g;
-      maskCtx.beginPath(); maskCtx.arc(mx, my, r, 0, Math.PI * 2); maskCtx.fill();
-    }
+    var mw = maskCanvas.width, mh = maskCanvas.height;
+    var mcx = mw / 2, mcy = mh / 2;
+    var maxR = Math.hypot(mw, mh) / 2;
+
+    var raw = Math.min(1, Math.max(0, (ct - REVEAL_START_CT) / (REVEAL_END_CT - REVEAL_START_CT)));
+    var revealT = easeOutCubic(raw); // 開くほど減速し、自然に静止する
+    var r = maxR * revealT;
+
+    maskCtx.clearRect(0, 0, mw, mh);
+    if (r <= 0) return 0;
+    var g = maskCtx.createRadialGradient(mcx, mcy, Math.max(0, r * 0.8), mcx, mcy, r);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    maskCtx.fillStyle = g;
+    maskCtx.beginPath(); maskCtx.arc(mcx, mcy, r, 0, Math.PI * 2); maskCtx.fill();
+    return r;
   }
 
-  // 着地した粒子の場所にだけ、画像をその場で写し出す(粒子が合体して絵になる見え方)
+  // 光が集まった場所を起点に、円形に開きながらアイテムを写し出す
   function drawRevealedItem(cx, restY, ct, now) {
-    if (!itemImgLoaded || !transformInfo.particles) return;
-    renderRevealMask(ct);
+    if (!itemImgLoaded) return;
+    var r = renderRevealMask(ct);
+    if (r <= 0) return;
 
     var ratio = itemImg.naturalWidth / itemImg.naturalHeight;
     var h = ITEM_DISPLAY_HEIGHT, w = h * ratio;
@@ -752,6 +749,22 @@
     revealCtx.globalCompositeOperation = 'source-over';
 
     ctx.drawImage(revealCanvas, cx - revealCanvas.width / 2, restY - revealCanvas.height / 2);
+
+    // 開いていく縁にほんのり光の輪を添え、光が押し広げているような質感を出す
+    var maxR = Math.hypot(revealCanvas.width, revealCanvas.height) / 2;
+    if (r < maxR * 0.98) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.filter = 'blur(5px)';
+      var ringAlpha = 0.4 * (1 - r / maxR);
+      var rg = ctx.createRadialGradient(cx, restY, Math.max(0, r * 0.78), cx, restY, r * 1.06);
+      rg.addColorStop(0, 'rgba(210,230,255,0)');
+      rg.addColorStop(0.85, 'rgba(220,235,255,' + ringAlpha + ')');
+      rg.addColorStop(1, 'rgba(220,235,255,0)');
+      ctx.fillStyle = rg;
+      ctx.beginPath(); ctx.arc(cx, restY, r * 1.06, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
   }
 
   function updateItemFloating(now) {
@@ -944,15 +957,8 @@
           ctx.restore();
         }
 
-        // 着地した粒子の場所ごとに、画像がその場でじわっと浮かび上がる(粒子が合体して絵になる)
+        // 光が集まった場所から円形に開いて、アイテムを写し出す
         drawRevealedItem(transformInfo.cx, getItemRestY(), ct, now);
-
-        // 仕上げ: 終盤にかけて完成画像へなめらかに寄せていく(集まりきる直前で止まって見えないように)
-        var topUpRaw = Math.min(1, Math.max(0, (ct - 0.82) / 0.18));
-        var topUp = topUpRaw * topUpRaw * (3 - 2 * topUpRaw);
-        if (topUp > 0.001) {
-          drawItem(transformInfo.cx, getItemRestY(), topUp, 1, now);
-        }
       } else {
         drawOrb(now);
       }
