@@ -306,20 +306,27 @@
     });
   }
 
+  // アイテムの新規登録(IndexedDBへの保存・選択・一覧更新)本体。
+  // 生ファイルの追加(下のaddCustomItemFromFile)だけでなく、切り抜き機能(js/crop.js)が
+  // 生成したBlobもここを通して同じ経路で登録する(window.LFDItemsとして公開)。
+  function addBlobAsItem(blob, name) {
+    var id = 'item_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    var record = { id: id, name: name || 'item', blob: blob };
+    return dbPutItem(record).then(function () {
+      record.thumbUrl = URL.createObjectURL(record.blob);
+      customItems.push(record);
+      selectItem(id); // 追加したその場ですぐ本番へ反映されるよう、追加したアイテムを自動で選択状態にする
+      renderItemGrid();
+    });
+  }
+
   function addCustomItemFromFile(file) {
     var allowed = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
     if (allowed.indexOf(file.type) === -1) {
       window.alert('対応していない画像形式です(PNG / JPEG / WebPをお使いください)');
       return;
     }
-    var id = 'item_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-    var record = { id: id, name: file.name, blob: file };
-    dbPutItem(record).then(function () {
-      record.thumbUrl = URL.createObjectURL(record.blob);
-      customItems.push(record);
-      selectItem(id); // 追加したその場ですぐ本番へ反映されるよう、追加したアイテムを自動で選択状態にする
-      renderItemGrid();
-    }).catch(function () {
+    addBlobAsItem(file, file.name).catch(function () {
       window.alert('画像の追加に失敗しました');
     });
   }
@@ -1188,4 +1195,7 @@
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+
+  // js/crop.js(切り抜き機能)から、生成したBlobをアイテムとして登録するための最小限の公開窓口
+  window.LFDItems = { addBlobAsItem: addBlobAsItem };
 })();

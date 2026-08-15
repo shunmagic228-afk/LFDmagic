@@ -204,3 +204,184 @@ html, body {
   align-items: center;
   justify-content: center;
 }
+
+/* ---- 切り抜き機能(入口 + 自動/手動エディタ) ---- */
+.cropOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  background: #000;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  padding: 24px;
+  padding-top: 48px;
+  padding-bottom: 48px;
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+  touch-action: pan-y;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.cropOverlay.hidden {
+  display: none;
+}
+
+.cropOverlay h1 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: 0.04em;
+}
+
+.cropModeBtn {
+  width: 100%;
+  max-width: 320px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font-size: 16px;
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.cropModeBtn .cropModeSub {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 400;
+}
+
+/* ---- 切り抜きエディタ(自動/手動 共通レイアウト) ---- */
+.cropEditorOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 16;
+  background: #000;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+}
+
+.cropEditorOverlay.hidden {
+  display: none;
+}
+
+.cropToolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 12px;
+  padding-top: max(14px, env(safe-area-inset-top));
+  box-sizing: border-box;
+}
+
+.cropToolbarSpacer {
+  flex: 1;
+}
+
+.cropToolBtn {
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.cropToolBtn.cropPrimary {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  margin-left: auto;
+}
+
+.cropModeToggle {
+  display: flex;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 3px;
+  margin: 0 auto;
+}
+
+.cropModeToggleBtn {
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.cropModeToggleBtn.selected {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.cropCanvasWrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  background-color: #111;
+  background-image:
+    linear-gradient(45deg, rgba(255,255,255,0.08) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255,255,255,0.08) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.08) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.08) 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+  overflow: hidden;
+}
+
+.cropCanvasWrap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.cropSliderRow {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.cropSliderLabel {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.65);
+  white-space: nowrap;
+}
+
+.cropSliderRow input[type="range"] {
+  flex: 1;
+}
+
+.cropBottomRow {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 12px;
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  flex-wrap: wrap;
+}

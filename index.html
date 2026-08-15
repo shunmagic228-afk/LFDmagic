@@ -25,12 +25,70 @@
   <div class="settingsLabel">アイテム追加</div>
   <input type="file" id="itemFileInput" class="hiddenFileInput" accept="image/png,image/jpeg,image/webp">
   <button class="addItemBtn" id="addItemBtn">＋ 画像を追加</button>
+  <button class="addItemBtn" id="openCropBtn">写真から切り抜いて追加</button>
 
   <div class="settingsLabel">アイテム選択</div>
   <div class="itemGrid" id="itemGrid"></div>
 
   <button class="closeBtn" id="closeSettingsBtn">閉じる</button>
 </div>
+
+<div id="cropEntryScreen" class="hidden cropOverlay">
+  <h1>切り抜き</h1>
+  <div class="settingsLabel">写真から背景を切り抜いてアイテムに追加します</div>
+
+  <input type="file" id="cropAutoFileInput" class="hiddenFileInput" accept="image/*">
+  <button class="cropModeBtn" id="cropAutoEntryBtn">
+    自動切り抜き
+    <span class="cropModeSub">背景が比較的単色の写真向け(例: お札)</span>
+  </button>
+
+  <input type="file" id="cropManualFileInput" class="hiddenFileInput" accept="image/*">
+  <button class="cropModeBtn" id="cropManualEntryBtn">
+    手動切り抜き
+    <span class="cropModeSub">指でなぞって範囲を選択(細部の調整向け)</span>
+  </button>
+
+  <button class="closeBtn" id="cropEntryBackBtn">戻る</button>
+</div>
+
+<div id="cropAutoScreen" class="hidden cropEditorOverlay">
+  <div class="cropToolbar">
+    <button class="cropToolBtn" id="cropAutoBackBtn">戻る</button>
+    <div class="cropToolbarSpacer"></div>
+    <button class="cropToolBtn cropPrimary" id="cropAutoDoneBtn">完了</button>
+  </div>
+  <div class="cropCanvasWrap">
+    <canvas id="cropAutoCanvas"></canvas>
+  </div>
+  <div class="cropSliderRow">
+    <span class="cropSliderLabel">背景の識別範囲</span>
+    <input type="range" id="cropToleranceSlider" min="2" max="90" value="28">
+  </div>
+</div>
+
+<div id="cropManualScreen" class="hidden cropEditorOverlay">
+  <div class="cropToolbar">
+    <button class="cropToolBtn" id="cropManualBackBtn">戻る</button>
+    <div class="cropModeToggle" id="cropModeToggle">
+      <button class="cropModeToggleBtn" data-mode="pan">移動</button>
+      <button class="cropModeToggleBtn selected" data-mode="add">追加</button>
+      <button class="cropModeToggleBtn" data-mode="subtract">除外</button>
+    </div>
+    <button class="cropToolBtn cropPrimary" id="cropManualDoneBtn">完了</button>
+  </div>
+  <div class="cropCanvasWrap">
+    <canvas id="cropManualCanvas"></canvas>
+  </div>
+  <div class="cropBottomRow">
+    <button class="cropToolBtn" id="cropZoomOutBtn">－</button>
+    <button class="cropToolBtn" id="cropZoomResetBtn">表示リセット</button>
+    <button class="cropToolBtn" id="cropZoomInBtn">＋</button>
+    <button class="cropToolBtn" id="cropUndoBtn">やり直す</button>
+  </div>
+</div>
+
 <script src="js/main.js"></script>
+<script src="js/crop.js"></script>
 </body>
 </html>
