@@ -233,7 +233,8 @@
     return ctx;
   }
 
-  // マスク済みcanvasを余白トリミングし、アイテムとして登録して切り抜き画面を閉じる
+  // マスク済みcanvasを余白トリミングし、サイズ調整画面(js/size.js)へ引き継ぐ。
+  // アイテムへの実際の登録は、演者が表示サイズを決めた後にそちら側で行われる。
   function finishCutout(canvas, name) {
     var trimmed = trimToOpaqueBounds(canvas, 6);
     if (!trimmed) {
@@ -245,11 +246,12 @@
         window.alert('切り抜き画像の生成に失敗しました');
         return;
       }
-      window.LFDItems.addBlobAsItem(blob, name).then(function () {
-        closeAllCropScreens();
-      }).catch(function () {
-        window.alert('アイテムへの追加に失敗しました');
-      });
+      teardownAuto();
+      teardownManual();
+      cropEntryScreen.classList.add('hidden');
+      cropAutoScreen.classList.add('hidden');
+      cropManualScreen.classList.add('hidden');
+      window.LFDSize.openForNewItem(blob, name);
     }, 'image/png');
   }
 
@@ -257,14 +259,6 @@
   function openCropEntry() {
     settingsScreen.classList.add('hidden');
     cropEntryScreen.classList.remove('hidden');
-  }
-  function closeAllCropScreens() {
-    cropEntryScreen.classList.add('hidden');
-    cropAutoScreen.classList.add('hidden');
-    cropManualScreen.classList.add('hidden');
-    teardownAuto();
-    teardownManual();
-    settingsScreen.classList.remove('hidden');
   }
   function backToCropEntryFromAuto() {
     cropAutoScreen.classList.add('hidden');

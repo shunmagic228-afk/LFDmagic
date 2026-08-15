@@ -89,7 +89,24 @@
   </div>
 </div>
 
+<div id="sizeScreen" class="hidden cropEditorOverlay">
+  <div class="cropToolbar">
+    <button class="cropToolBtn" id="sizeBackBtn">キャンセル</button>
+    <div class="cropToolbarSpacer"></div>
+    <button class="cropToolBtn cropPrimary" id="sizeConfirmBtn">決定</button>
+  </div>
+  <div class="sizeHint">実物を画面に当てながら、大きさが合うように調整してください</div>
+  <div class="cropCanvasWrap">
+    <canvas id="sizeCanvas"></canvas>
+  </div>
+  <div class="cropSliderRow">
+    <span class="cropSliderLabel" id="sizePercentLabel">100%</span>
+    <input type="range" id="sizeSlider" min="10" max="200" value="100">
+  </div>
+</div>
+
 <script src="js/main.js"></script>
 <script src="js/crop.js"></script>
+<script src="js/size.js"></script>
 </body>
 </html>

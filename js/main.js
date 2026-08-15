@@ -28,6 +28,11 @@
 
   var savedSettings = loadSettings();
   var selectedItemId = savedSettings.selectedItemId || DEFAULT_ITEM_ID;
+  // 同梱のデフォルト画像の表示倍率。saveSettings()はlocalStorageのみ更新しsavedSettingsは
+  // 更新しないため、他の設定値と同様にライブな変数として持っておく(1=等倍)。
+  var defaultItemScale = (typeof savedSettings.defaultItemScale === 'number') ? savedSettings.defaultItemScale : 1;
+  // 選択中アイテムの表示倍率(1=等倍。設定画面の「サイズ調整」で演者が実物と見比べて調整した値)
+  var itemScale = defaultItemScale;
 
   // ---- 設定値 ----
   var DOUBLE_TAP_MAX_INTERVAL = 300; // ダブルタップとみなす最大間隔(ms)
@@ -170,7 +175,7 @@
     octx.drawImage(itemImg, 0, 0, sampleW, sampleH);
     var data = octx.getImageData(0, 0, sampleW, sampleH).data;
 
-    var dispH = ITEM_DISPLAY_HEIGHT;
+    var dispH = ITEM_DISPLAY_HEIGHT * itemScale;
     var dispW = dispH * ratio;
     var pts = [];
     for (var y = 0; y < sampleH; y++) {
@@ -252,11 +257,45 @@
     return rec ? rec.thumbUrl : 'img/item.png';
   }
 
+  // アイテムIDから表示倍率を取得(1=等倍)。同梱のデフォルト画像はlocalStorage、
+  // 追加した画像はIndexedDBのレコードにそれぞれ持たせる。
+  function getItemScaleById(id) {
+    if (id === DEFAULT_ITEM_ID) return defaultItemScale;
+    var rec = findCustomItem(id);
+    return (rec && typeof rec.scale === 'number') ? rec.scale : 1;
+  }
+
+  // アイテムIDを指定して表示倍率を保存する(設定画面の「サイズ調整」から呼ばれる)。
+  // 選択中のアイテムであれば、即座に描画へも反映する。
+  function setItemScaleById(id, scale) {
+    if (id === DEFAULT_ITEM_ID) {
+      defaultItemScale = scale;
+      saveSettings({ defaultItemScale: scale });
+      if (selectedItemId === DEFAULT_ITEM_ID) {
+        itemScale = scale;
+        if (itemImgLoaded) buildItemSamplePoints();
+      }
+      renderItemGrid();
+      return Promise.resolve();
+    }
+    var rec = findCustomItem(id);
+    if (!rec) return Promise.resolve();
+    rec.scale = scale;
+    return dbPutItem({ id: rec.id, name: rec.name, blob: rec.blob, scale: scale }).then(function () {
+      if (selectedItemId === id) {
+        itemScale = scale;
+        if (itemImgLoaded) buildItemSamplePoints();
+      }
+      renderItemGrid();
+    });
+  }
+
   // 選択中のアイテムIDに応じて itemImg.src を差し替える。以降は既存の itemImg.onload が
   // 形状サンプル点の再構築(buildItemSamplePoints)を自動で行う。
   function applySelectedItem() {
     itemImgLoaded = false;
     itemSamplePoints = null;
+    itemScale = getItemScaleById(selectedItemId);
     itemImg.src = getItemSrcById(selectedItemId);
   }
 
@@ -302,16 +341,26 @@
         wrap.appendChild(del);
       }
 
+      var sizeBadge = document.createElement('button');
+      sizeBadge.className = 'itemSizeBadge';
+      sizeBadge.textContent = Math.round(getItemScaleById(entry.id) * 100) + '%';
+      sizeBadge.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (window.LFDSize) window.LFDSize.openForExistingItem(entry.id);
+      });
+      wrap.appendChild(sizeBadge);
+
       itemGrid.appendChild(wrap);
     });
   }
 
   // アイテムの新規登録(IndexedDBへの保存・選択・一覧更新)本体。
-  // 生ファイルの追加(下のaddCustomItemFromFile)だけでなく、切り抜き機能(js/crop.js)が
-  // 生成したBlobもここを通して同じ経路で登録する(window.LFDItemsとして公開)。
-  function addBlobAsItem(blob, name) {
+  // 生ファイルの追加(下のaddCustomItemFromFile)だけでなく、切り抜き機能(js/crop.js)や
+  // サイズ調整機能(js/size.js)が生成したBlobもここを通して同じ経路で登録する
+  // (window.LFDItemsとして公開)。scaleは表示倍率(1=等倍、省略時は1)。
+  function addBlobAsItem(blob, name, scale) {
     var id = 'item_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-    var record = { id: id, name: name || 'item', blob: blob };
+    var record = { id: id, name: name || 'item', blob: blob, scale: (typeof scale === 'number') ? scale : 1 };
     return dbPutItem(record).then(function () {
       record.thumbUrl = URL.createObjectURL(record.blob);
       customItems.push(record);
@@ -326,9 +375,8 @@
       window.alert('対応していない画像形式です(PNG / JPEG / WebPをお使いください)');
       return;
     }
-    addBlobAsItem(file, file.name).catch(function () {
-      window.alert('画像の追加に失敗しました');
-    });
+    // 追加する前に、実物と見比べて表示サイズを決める「サイズ調整」画面へ引き継ぐ
+    window.LFDSize.openForNewItem(file, file.name);
   }
 
   function deleteCustomItem(id) {
@@ -583,7 +631,7 @@
 
     if (state === 'item') {
       // アイテムへの「シングルタップ」で、0.5秒後に画面下へ滑り落ちて退場
-      if (item && !item.exiting && Math.hypot(x - item.x, y - item.y) <= ITEM_HIT_RADIUS) {
+      if (item && !item.exiting && Math.hypot(x - item.x, y - item.y) <= ITEM_HIT_RADIUS * itemScale) {
         scheduleItemExit();
       }
       lastTapTime = 0;
@@ -668,7 +716,9 @@
     var n = 100;
     for (var i = 0; i < n; i++) {
       var a = rand(0, Math.PI * 2);
-      var sp = rand(40, 460);
+      // 最低速度が低すぎると、その場でほぼ動かないまま長く残る粒子が重なり、
+      // 発射点に白い染みのように見えてしまうため、確実に散っていく速度を確保する
+      var sp = rand(220, 520);
       addSparkle(x, y, Math.cos(a) * sp, Math.sin(a) * sp, rand(450, 1400));
     }
   }
@@ -898,8 +948,9 @@
     // 画像を写し出すマスク用キャンバスを、表示サイズ+光の輪ぶんの余白で用意する
     var ratio = itemImg.naturalWidth / itemImg.naturalHeight;
     var pad = 24;
-    var mw = Math.ceil(ITEM_DISPLAY_HEIGHT * ratio + pad);
-    var mh = Math.ceil(ITEM_DISPLAY_HEIGHT + pad);
+    var dispH = ITEM_DISPLAY_HEIGHT * itemScale;
+    var mw = Math.ceil(dispH * ratio + pad);
+    var mh = Math.ceil(dispH + pad);
     maskCanvas.width = mw;
     maskCanvas.height = mh;
     revealCanvas.width = mw;
@@ -964,7 +1015,7 @@
     if (r <= 0) return;
 
     var ratio = itemImg.naturalWidth / itemImg.naturalHeight;
-    var h = ITEM_DISPLAY_HEIGHT, w = h * ratio;
+    var h = ITEM_DISPLAY_HEIGHT * itemScale, w = h * ratio;
     var ox = revealCanvas.width / 2 - w / 2, oy = revealCanvas.height / 2 - h / 2;
 
     revealCtx.clearRect(0, 0, revealCanvas.width, revealCanvas.height);
@@ -998,7 +1049,7 @@
       var et = Math.min(1, (now - item.exitStartAt) / ITEM_EXIT_SLIDE_MS);
       var e = et * et; // すーっと加速しながら画面外へ
       item.x = item.exitFromX;
-      item.y = item.exitFromY + (H + ITEM_DISPLAY_HEIGHT - item.exitFromY) * e;
+      item.y = item.exitFromY + (H + ITEM_DISPLAY_HEIGHT * itemScale - item.exitFromY) * e;
       if (et >= 1) {
         item = null;
         sparkles.length = 0;
@@ -1189,13 +1240,19 @@
         drawOrb(now);
       }
     } else if (state === 'item' && item) {
-      drawItem(item.x, item.y, 1, 1, now);
+      drawItem(item.x, item.y, 1, itemScale, now);
     }
 
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 
-  // js/crop.js(切り抜き機能)から、生成したBlobをアイテムとして登録するための最小限の公開窓口
-  window.LFDItems = { addBlobAsItem: addBlobAsItem };
+  // js/crop.js(切り抜き機能)・js/size.js(サイズ調整機能)から呼ぶための最小限の公開窓口
+  window.LFDItems = {
+    addBlobAsItem: addBlobAsItem,
+    getItemSrc: getItemSrcById,
+    getItemScale: getItemScaleById,
+    setItemScale: setItemScaleById,
+    DEFAULT_ITEM_ID: DEFAULT_ITEM_ID
+  };
 })();
