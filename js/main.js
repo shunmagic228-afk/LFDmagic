@@ -61,7 +61,7 @@
 
   // アイテムをタップしてから退場を始めるまでの間(設定画面で変更可能。未設定なら6秒がデフォルト)
   var itemExitDelayMs = (typeof savedSettings.exitDelayMs === 'number') ? savedSettings.exitDelayMs : DEFAULT_EXIT_DELAY_MS;
-  var ITEM_EXIT_SLIDE_MS = 1900; // 画面外へ滑り落ちるまでの時間
+  var ITEM_EXIT_SLIDE_MS = 1550; // 画面外へ滑り落ちるまでの時間
 
   var CORNER_SIZE = 90;              // 画面右下のリセット判定エリアの一辺(px)
   var CORNER_TRIPLE_WINDOW_MS = 700; // この時間内に3回タップされたらリセット/設定画面
