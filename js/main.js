@@ -59,8 +59,13 @@
   var REVEAL_START_CT        = 0.62; // アイリス状の写し出しを開き始めるタイミング(進行度ct)
   var REVEAL_END_CT          = 0.95; // 完全に開ききるタイミング(進行度ct)
 
+  // アイテムをタップした後の消え方: 'slide'=下へ滑り落ちて退場(既存) / 'cutout'=その場で瞬時に消える(新規)
+  var DEFAULT_CUTOUT_DELAY_MS = 3000;
+  var exitMode = savedSettings.exitMode === 'cutout' ? 'cutout' : 'slide';
   // アイテムをタップしてから退場を始めるまでの間(設定画面で変更可能。未設定なら6秒がデフォルト)
   var itemExitDelayMs = (typeof savedSettings.exitDelayMs === 'number') ? savedSettings.exitDelayMs : DEFAULT_EXIT_DELAY_MS;
+  // アイテムをタップしてからカットアウトで消えるまでの間(カットアウトモード用。未設定なら3秒がデフォルト)
+  var itemCutoutDelayMs = (typeof savedSettings.cutoutDelayMs === 'number') ? savedSettings.cutoutDelayMs : DEFAULT_CUTOUT_DELAY_MS;
   var ITEM_EXIT_SLIDE_MS = 1550; // 画面外へ滑り落ちるまでの時間
 
   var CORNER_SIZE = 90;              // 画面右下のリセット判定エリアの一辺(px)
@@ -88,8 +93,11 @@
 
   // ---- 設定画面(演者用。ダブルタップ・トリプルタップと違いHTMLの通常ボタンで作る) ----
   var ITEM_EXIT_DELAY_OPTIONS_S = [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  var ITEM_CUTOUT_DELAY_OPTIONS_S = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   var settingsScreen = document.getElementById('settingsScreen');
+  var exitModeToggle = document.getElementById('exitModeToggle');
   var exitDelayGrid = document.getElementById('exitDelayGrid');
+  var cutoutDelayGrid = document.getElementById('cutoutDelayGrid');
   var closeSettingsBtn = document.getElementById('closeSettingsBtn');
   var itemGrid = document.getElementById('itemGrid');
   var addItemBtn = document.getElementById('addItemBtn');
@@ -108,16 +116,52 @@
     exitDelayGrid.appendChild(btn);
   });
 
+  ITEM_CUTOUT_DELAY_OPTIONS_S.forEach(function (sec) {
+    var btn = document.createElement('button');
+    btn.className = 'durationBtn';
+    btn.textContent = sec + '秒';
+    btn.dataset.ms = Math.round(sec * 1000);
+    btn.addEventListener('click', function () {
+      itemCutoutDelayMs = Number(btn.dataset.ms);
+      saveSettings({ cutoutDelayMs: itemCutoutDelayMs });
+      updateExitDelayButtons();
+    });
+    cutoutDelayGrid.appendChild(btn);
+  });
+
   function updateExitDelayButtons() {
     var btns = exitDelayGrid.querySelectorAll('.durationBtn');
     for (var i = 0; i < btns.length; i++) {
       var isSelected = Number(btns[i].dataset.ms) === itemExitDelayMs;
       btns[i].classList.toggle('selected', isSelected);
     }
+    var cbtns = cutoutDelayGrid.querySelectorAll('.durationBtn');
+    for (var j = 0; j < cbtns.length; j++) {
+      var cSelected = Number(cbtns[j].dataset.ms) === itemCutoutDelayMs;
+      cbtns[j].classList.toggle('selected', cSelected);
+    }
   }
+
+  function updateExitModeUI() {
+    var mbtns = exitModeToggle.querySelectorAll('.cropModeToggleBtn');
+    for (var i = 0; i < mbtns.length; i++) {
+      mbtns[i].classList.toggle('selected', mbtns[i].dataset.mode === exitMode);
+    }
+    exitDelayGrid.classList.toggle('hidden', exitMode !== 'slide');
+    cutoutDelayGrid.classList.toggle('hidden', exitMode !== 'cutout');
+  }
+
+  exitModeToggle.addEventListener('click', function (e) {
+    var btn = e.target.closest ? e.target.closest('.cropModeToggleBtn') : null;
+    if (!btn) return;
+    exitMode = btn.dataset.mode;
+    saveSettings({ exitMode: exitMode });
+    updateExitModeUI();
+  });
 
   function openSettings() {
     updateExitDelayButtons();
+    updateExitModeUI();
     renderItemGrid();
     settingsScreen.classList.remove('hidden');
   }
@@ -673,10 +717,20 @@
     };
   }
 
-  // アイテムへのタップ後、設定された時間だけ待ってから画面下へ滑り落として退場させる
+  // アイテムへのタップ後、設定された時間だけ待ってから消す。
+  // 'slide'(退場スライド): 画面下へ滑り落として退場。'cutout': その場で瞬時に消える。
   function scheduleItemExit() {
     if (!item || item.exiting) return;
     item.exiting = true;
+    if (exitMode === 'cutout') {
+      setTimeout(function () {
+        if (state !== 'item' || !item) return;
+        item = null;
+        sparkles.length = 0;
+        state = 'idle';
+      }, itemCutoutDelayMs);
+      return;
+    }
     setTimeout(function () {
       if (state !== 'item' || !item) return;
       item.sliding = true;

@@ -19,8 +19,15 @@
 </div>
 <div id="settingsScreen" class="hidden">
   <h1>設定</h1>
-  <div class="settingsLabel">アイテムをタップしてから退場するまでの時間</div>
+  <div class="settingsLabel">アイテムをタップした後の消え方</div>
+  <div class="cropModeToggle" id="exitModeToggle">
+    <button class="cropModeToggleBtn selected" data-mode="slide">退場スライド</button>
+    <button class="cropModeToggleBtn" data-mode="cutout">カットアウト</button>
+  </div>
+
+  <div class="settingsLabel">アイテムをタップしてから消えるまでの時間</div>
   <div class="durationGrid" id="exitDelayGrid"></div>
+  <div class="durationGrid hidden" id="cutoutDelayGrid"></div>
 
   <div class="settingsLabel">アイテム追加</div>
   <input type="file" id="itemFileInput" class="hiddenFileInput" accept="image/png,image/jpeg,image/webp">
