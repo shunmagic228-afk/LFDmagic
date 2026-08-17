@@ -90,6 +90,14 @@
     return parseFloat(getComputedStyle(safeAreaProbe).height) || 0;
   }
 
+  // TEMP DEBUG (検証用、確認後に削除): 上側のセーフエリアも計測して原因の切り分けに使う
+  var safeAreaTopProbe = document.createElement('div');
+  safeAreaTopProbe.style.cssText = 'position:fixed; height:env(safe-area-inset-top, 0px); top:0; left:0; visibility:hidden; pointer-events:none;';
+  document.body.appendChild(safeAreaTopProbe);
+  function getSafeAreaTop() {
+    return parseFloat(getComputedStyle(safeAreaTopProbe).height) || 0;
+  }
+
   function resize() {
     dpr = Math.max(1, window.devicePixelRatio || 1);
     W = window.innerWidth;
@@ -115,6 +123,7 @@
         'innerH:' + window.innerHeight +
         ' screenH:' + window.screen.height +
         ' vvH:' + (vv ? Math.round(vv.height) : 'NA') +
+        ' safeTop:' + getSafeAreaTop() +
         ' safeBottom:' + getSafeAreaBottom() +
         ' H(適用後):' + H +
         ' dpr:' + window.devicePixelRatio;
