@@ -135,6 +135,33 @@
     setTimeout(update, 1500);
   })();
 
+  // TEMP DEBUG (検証用、確認後に削除): 画面の色が物理的な端まで本当に届いているか、
+  // 目と指で確認するためのテスト画面。起動時に最初に表示し、タップで通常画面へ進む。
+  (function () {
+    var screenEl = document.getElementById('edgeTestScreen');
+    var fillEl = document.getElementById('edgeTestFill');
+    var lineEl = document.getElementById('edgeTestOldLine');
+    var numsEl = document.getElementById('edgeTestNums');
+    if (!screenEl || !fillEl || !lineEl || !numsEl) return;
+
+    function layout() {
+      var rawInnerH = window.innerHeight; // 補正前の高さ(以前の見え方の境界)
+      fillEl.style.height = H + 'px';
+      lineEl.style.top = rawInnerH + 'px';
+      numsEl.textContent =
+        '拡張後の高さ:' + H + 'px / 端末の画面高さ(参考値):' + window.screen.height + 'px';
+    }
+    layout();
+    window.addEventListener('resize', layout);
+    window.addEventListener('orientationchange', layout);
+    setTimeout(layout, 500);
+    setTimeout(layout, 1500);
+
+    screenEl.addEventListener('click', function () {
+      screenEl.style.display = 'none';
+    });
+  })();
+
   // ---- 設定画面(演者用。ダブルタップ・トリプルタップと違いHTMLの通常ボタンで作る) ----
   var ITEM_EXIT_DELAY_OPTIONS_S = [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   var ITEM_CUTOUT_DELAY_OPTIONS_S = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
