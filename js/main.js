@@ -91,6 +91,30 @@
   window.addEventListener('orientationchange', resize);
   resize();
 
+  // TEMP DEBUG (検証用、確認後に削除): 画面下端まで表示が届いているか計測するための表示
+  (function () {
+    var el = document.getElementById('debugOverlay');
+    if (!el) return;
+    var probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed; height:env(safe-area-inset-bottom, 0px); bottom:0; left:0; visibility:hidden;';
+    document.body.appendChild(probe);
+    function update() {
+      var vv = window.visualViewport;
+      el.textContent =
+        'innerH:' + window.innerHeight +
+        ' clientH:' + document.documentElement.clientHeight +
+        ' screenH:' + window.screen.height +
+        ' vvH:' + (vv ? Math.round(vv.height) : 'NA') +
+        ' safeBottom:' + getComputedStyle(probe).height +
+        ' dpr:' + window.devicePixelRatio;
+    }
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('orientationchange', update);
+    setTimeout(update, 500);
+    setTimeout(update, 1500);
+  })();
+
   // ---- 設定画面(演者用。ダブルタップ・トリプルタップと違いHTMLの通常ボタンで作る) ----
   var ITEM_EXIT_DELAY_OPTIONS_S = [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   var ITEM_CUTOUT_DELAY_OPTIONS_S = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -1040,6 +1064,7 @@
   }
 
   function easeOutCubic(x) { return 1 - Math.pow(1 - x, 3); }
+  function easeInCubic(x) { return x * x * x; }
   function easeInOutCubic(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
 
   // 粒子1個の、変化の進行度ct(0-1)における位置と不透明度。
@@ -1129,13 +1154,29 @@
   function updateItemFloating(now) {
     if (item.sliding) {
       var et = Math.min(1, (now - item.exitStartAt) / ITEM_EXIT_SLIDE_MS);
-      var e = et * et; // すーっと加速しながら画面外へ
       // 漂っている間に左右へ寄っていても、退場が始まったら中心へ寄せてから落としていく
       // (退場のたびに画面中心から出ていったように見せるため)。動き出しも唐突にならないよう、
       // ゆっくり始まってゆっくり終わる、ふんわりとした動きにする
       var centerEase = easeInOutCubic(Math.min(1, et / 0.75));
       item.x = item.exitFromX + (W / 2 - item.exitFromX) * centerEase;
-      item.y = item.exitFromY + (H + ITEM_DISPLAY_HEIGHT * itemScale - item.exitFromY) * e;
+
+      // 縦の動きは2段階に分ける。前半で画面下端にアイテムの底が触れる位置まで加速しながら落とし、
+      // 後半はそこから完全に画面外へ抜けきるまで(=アイテム1個分の高さぶん)を、あえて時間をかけて
+      // ゆっくり動かす。こうしないと、画面下端に触れた直後の一瞬で見えなくなってしまい、
+      // 「画面を通過して消えていく」様子がほとんど見えないまま(見切れた印象のまま)終わってしまう。
+      var dispH = ITEM_DISPLAY_HEIGHT * itemScale;
+      var edgeY = Math.max(H - dispH / 2, item.exitFromY + 40); // アイテムの底が画面下端に触れる位置
+      var offY = edgeY + dispH; // そこからさらにアイテム1個分落として完全に画面外へ
+      var PASS_PHASE_START = 0.6; // 全体の時間のうち、ここまでは通常の落下、残りを通過演出に使う
+
+      if (et < PASS_PHASE_START) {
+        var e1 = easeInCubic(et / PASS_PHASE_START); // 序盤は加速しながら落ちる
+        item.y = item.exitFromY + (edgeY - item.exitFromY) * e1;
+      } else {
+        var e2 = easeOutCubic((et - PASS_PHASE_START) / (1 - PASS_PHASE_START)); // 通過中はゆっくり、はっきり見せる
+        item.y = edgeY + (offY - edgeY) * e2;
+      }
+
       if (et >= 1) {
         item = null;
         sparkles.length = 0;
