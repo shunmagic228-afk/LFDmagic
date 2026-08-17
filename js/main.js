@@ -101,7 +101,11 @@
   function resize() {
     dpr = Math.max(1, window.devicePixelRatio || 1);
     W = window.innerWidth;
-    H = window.innerHeight + getSafeAreaBottom();
+    // window.innerHeightが画面下端まで届いていない端末があるため、実機での目視確認により
+    // window.screen.heightの方が物理的な画面高さを正しく表していると分かった。念のため
+    // (innerHeight+safeBottom)との大きい方を採用し、screen.heightが取れない/おかしい環境でも
+    // 従来どおり最低限の高さは確保する。
+    H = Math.max(window.innerHeight + getSafeAreaBottom(), window.screen.height || 0);
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
     canvas.style.height = H + 'px';
