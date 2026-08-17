@@ -1408,4 +1408,10 @@
     setItemScale: setItemScaleById,
     DEFAULT_ITEM_ID: DEFAULT_ITEM_ID
   };
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+    });
+  }
 })();
