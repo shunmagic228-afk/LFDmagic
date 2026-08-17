@@ -79,12 +79,26 @@
   var dpr = 1;
   var W = 0, H = 0; // CSSピクセル単位の論理サイズ
 
+  // ホーム画面に追加したWeb版アプリ(いわゆる簡易PWA)は、viewport-fit=coverを指定しても
+  // window.innerHeightが画面下端のセーフエリア(ホームインジケーター分)を含まないままの
+  // 端末があるため、実測したsafe-area-inset-bottomの分だけ高さを上乗せして、
+  // キャンバス自体を画面の物理的な下端まで強制的に伸ばす。
+  var safeAreaProbe = document.createElement('div');
+  safeAreaProbe.style.cssText = 'position:fixed; height:env(safe-area-inset-bottom, 0px); bottom:0; left:0; visibility:hidden; pointer-events:none;';
+  document.body.appendChild(safeAreaProbe);
+  function getSafeAreaBottom() {
+    return parseFloat(getComputedStyle(safeAreaProbe).height) || 0;
+  }
+
   function resize() {
     dpr = Math.max(1, window.devicePixelRatio || 1);
     W = window.innerWidth;
-    H = window.innerHeight;
+    H = window.innerHeight + getSafeAreaBottom();
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
+    canvas.style.height = H + 'px';
+    document.body.style.height = H + 'px';
+    document.documentElement.style.height = H + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   window.addEventListener('resize', resize);
@@ -95,17 +109,14 @@
   (function () {
     var el = document.getElementById('debugOverlay');
     if (!el) return;
-    var probe = document.createElement('div');
-    probe.style.cssText = 'position:fixed; height:env(safe-area-inset-bottom, 0px); bottom:0; left:0; visibility:hidden;';
-    document.body.appendChild(probe);
     function update() {
       var vv = window.visualViewport;
       el.textContent =
         'innerH:' + window.innerHeight +
-        ' clientH:' + document.documentElement.clientHeight +
         ' screenH:' + window.screen.height +
         ' vvH:' + (vv ? Math.round(vv.height) : 'NA') +
-        ' safeBottom:' + getComputedStyle(probe).height +
+        ' safeBottom:' + getSafeAreaBottom() +
+        ' H(適用後):' + H +
         ' dpr:' + window.devicePixelRatio;
     }
     update();
