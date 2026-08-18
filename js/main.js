@@ -78,17 +78,22 @@
 
   var dpr = 1;
   var W = 0, H = 0; // CSSピクセル単位の論理サイズ
+  // iOSのホーム画面追加アプリでは、端末によって画面の物理的な高さ(screen.height)より
+  // 実際に描画できる高さ(H)が小さいこと(上端にステータスバー分の帯)があるため、その差分を
+  // 「見えない帯のおおよその高さ」として推定しておく。飛び込み演出でその帯に触れないようにするため。
+  var topGapEstimate = 0;
 
   function resize() {
     dpr = Math.max(1, window.devicePixelRatio || 1);
     // window.innerHeightではなく、CSSが実際に描画した大きさ(getBoundingClientRect)を使う。
-    // #stageはposition:fixed;inset:0のため、画面の物理的な端まで正しく広がる。
+    // #stageWrapはposition:fixed;inset:0のため、画面の物理的な端まで正しく広がる。
     var rect = canvas.getBoundingClientRect();
     W = rect.width;
     H = rect.height;
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    topGapEstimate = Math.max(0, (window.screen.height || H) - H);
   }
   window.addEventListener('resize', resize);
   window.addEventListener('orientationchange', resize);
@@ -907,20 +912,23 @@
       }
     }
 
-    // ソフトな画面端の反発(常に画面内に留める)
+    // ソフトな画面端の反発(常に画面内に留める)。
+    // 上端だけは、飛び込み演出の勢いで見えない帯(topGapEstimate)に触れて違和感が出ないよう、
+    // その帯の高さぶん余分に手前で押し返す(指でつまんでいる間はこの制限を受けない)。
     var m = BOUNDARY_MARGIN;
+    var topM = m + topGapEstimate;
     if (orb.x < m) orb.vx += (m - orb.x) * 8 * dt;
     if (orb.x > W - m) orb.vx -= (orb.x - (W - m)) * 8 * dt;
-    if (orb.y < m) orb.vy += (m - orb.y) * 8 * dt;
+    if (orb.y < topM) orb.vy += (topM - orb.y) * 8 * dt;
     if (orb.y > H - m) orb.vy -= (orb.y - (H - m)) * 8 * dt;
 
     orb.x += orb.vx * dt;
     orb.y += orb.vy * dt;
 
-    // 保険としてのハードクランプ(絶対に画面外へ出さない)
+    // 保険としてのハードクランプ(絶対に画面外へ出さない)。上端は帯を避ける分だけ厳しめにする。
     var hardM = m * 0.5;
     orb.x = Math.max(hardM, Math.min(W - hardM, orb.x));
-    orb.y = Math.max(hardM, Math.min(H - hardM, orb.y));
+    orb.y = Math.max(topM * 0.5, Math.min(H - hardM, orb.y));
 
     // 軌跡ポイントを記録
     orb.trail.push({ x: orb.x, y: orb.y, t: now });
