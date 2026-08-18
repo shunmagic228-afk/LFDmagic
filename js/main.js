@@ -79,30 +79,10 @@
   var dpr = 1;
   var W = 0, H = 0; // CSSピクセル単位の論理サイズ
 
-  // ホーム画面に追加したWeb版アプリ(いわゆる簡易PWA)は、viewport-fit=coverを指定しても
-  // window.innerHeightが画面下端のセーフエリア(ホームインジケーター分)を含まないままの
-  // 端末があるため、実測したsafe-area-inset-bottomの分だけ高さを上乗せして、
-  // キャンバス自体を画面の物理的な下端まで強制的に伸ばす。
-  var safeAreaProbe = document.createElement('div');
-  safeAreaProbe.style.cssText = 'position:fixed; height:env(safe-area-inset-bottom, 0px); bottom:0; left:0; visibility:hidden; pointer-events:none;';
-  document.body.appendChild(safeAreaProbe);
-  function getSafeAreaBottom() {
-    return parseFloat(getComputedStyle(safeAreaProbe).height) || 0;
-  }
-
-  // TEMP DEBUG (検証用、確認後に削除): 上側のセーフエリアも計測して原因の切り分けに使う
-  var safeAreaTopProbe = document.createElement('div');
-  safeAreaTopProbe.style.cssText = 'position:fixed; height:env(safe-area-inset-top, 0px); top:0; left:0; visibility:hidden; pointer-events:none;';
-  document.body.appendChild(safeAreaTopProbe);
-  function getSafeAreaTop() {
-    return parseFloat(getComputedStyle(safeAreaTopProbe).height) || 0;
-  }
-
   function resize() {
     dpr = Math.max(1, window.devicePixelRatio || 1);
-    // window.innerHeightから逆算して高さを強制的に上書きする方式は、CSS(height:100%/100dvh)が
-    // 本来出せるはずの正しい高さを逆に壊してしまっていた可能性があるため撤回。
-    // 実際にCSSが描画した大きさ(getBoundingClientRect)をそのまま信用する。
+    // window.innerHeightではなく、CSSが実際に描画した大きさ(getBoundingClientRect)を使う。
+    // #stageはposition:fixed;inset:0のため、画面の物理的な端まで正しく広がる。
     var rect = canvas.getBoundingClientRect();
     W = rect.width;
     H = rect.height;
@@ -113,55 +93,6 @@
   window.addEventListener('resize', resize);
   window.addEventListener('orientationchange', resize);
   resize();
-
-  // TEMP DEBUG (検証用、確認後に削除): 画面下端まで表示が届いているか計測するための表示
-  (function () {
-    var el = document.getElementById('debugOverlay');
-    if (!el) return;
-    function update() {
-      var vv = window.visualViewport;
-      el.textContent =
-        'innerH:' + window.innerHeight +
-        ' screenH:' + window.screen.height +
-        ' vvH:' + (vv ? Math.round(vv.height) : 'NA') +
-        ' safeTop:' + getSafeAreaTop() +
-        ' safeBottom:' + getSafeAreaBottom() +
-        ' H(適用後):' + H +
-        ' dpr:' + window.devicePixelRatio;
-    }
-    update();
-    window.addEventListener('resize', update);
-    window.addEventListener('orientationchange', update);
-    setTimeout(update, 500);
-    setTimeout(update, 1500);
-  })();
-
-  // TEMP DEBUG (検証用、確認後に削除): 画面の色が物理的な端まで本当に届いているか、
-  // 目と指で確認するためのテスト画面。起動時に最初に表示し、タップで通常画面へ進む。
-  (function () {
-    var screenEl = document.getElementById('edgeTestScreen');
-    var fillEl = document.getElementById('edgeTestFill');
-    var lineEl = document.getElementById('edgeTestOldLine');
-    var numsEl = document.getElementById('edgeTestNums');
-    if (!screenEl || !fillEl || !lineEl || !numsEl) return;
-
-    function layout() {
-      var rawInnerH = window.innerHeight; // 補正前の高さ(以前の見え方の境界)
-      fillEl.style.height = H + 'px';
-      lineEl.style.top = rawInnerH + 'px';
-      numsEl.textContent =
-        '拡張後の高さ:' + H + 'px / 端末の画面高さ(参考値):' + window.screen.height + 'px';
-    }
-    layout();
-    window.addEventListener('resize', layout);
-    window.addEventListener('orientationchange', layout);
-    setTimeout(layout, 500);
-    setTimeout(layout, 1500);
-
-    screenEl.addEventListener('click', function () {
-      screenEl.style.display = 'none';
-    });
-  })();
 
   // ---- 設定画面(演者用。ダブルタップ・トリプルタップと違いHTMLの通常ボタンで作る) ----
   var ITEM_EXIT_DELAY_OPTIONS_S = [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
