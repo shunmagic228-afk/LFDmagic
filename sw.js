@@ -1,6 +1,6 @@
 // 光球マジックアプリのオフラインキャッシュ。Wi-Fiマジックアプリと同じ方式
 // (キャッシュ優先+裏で更新)にして、通信が不安定な本番会場でも動くようにする。
-const CACHE_VERSION = 'lfd-v6';
+const CACHE_VERSION = 'lfd-v7';
 const PRECACHE_URLS = [
   './',
   './index.html',

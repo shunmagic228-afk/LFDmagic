@@ -1043,7 +1043,6 @@
   }
 
   function easeOutCubic(x) { return 1 - Math.pow(1 - x, 3); }
-  function easeInCubic(x) { return x * x * x; }
   function easeInOutCubic(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
 
   // 粒子1個の、変化の進行度ct(0-1)における位置と不透明度。
@@ -1139,22 +1138,13 @@
       var centerEase = easeInOutCubic(Math.min(1, et / 0.75));
       item.x = item.exitFromX + (W / 2 - item.exitFromX) * centerEase;
 
-      // 縦の動きは2段階に分ける。前半で画面下端にアイテムの底が触れる位置まで加速しながら落とし、
-      // 後半はそこから完全に画面外へ抜けきるまで(=アイテム1個分の高さぶん)を、あえて時間をかけて
-      // ゆっくり動かす。こうしないと、画面下端に触れた直後の一瞬で見えなくなってしまい、
-      // 「画面を通過して消えていく」様子がほとんど見えないまま(見切れた印象のまま)終わってしまう。
+      // 縦の動きは加速・減速をつけず、最初から最後まで完全に一定速度で落とす。
+      // 以前は画面下端に触れる位置で速度カーブを2段階に切り替えていたが、
+      // その継ぎ目でちょうど下端に触れる瞬間に速度が不連続になり「ぐん」と
+      // 加速したように見えてしまっていたため、単純な線形移動に戻した。
       var dispH = ITEM_DISPLAY_HEIGHT * itemScale;
-      var edgeY = Math.max(H - dispH / 2, item.exitFromY + 40); // アイテムの底が画面下端に触れる位置
-      var offY = edgeY + dispH; // そこからさらにアイテム1個分落として完全に画面外へ
-      var PASS_PHASE_START = 0.6; // 全体の時間のうち、ここまでは通常の落下、残りを通過演出に使う
-
-      if (et < PASS_PHASE_START) {
-        var e1 = easeInCubic(et / PASS_PHASE_START); // 序盤は加速しながら落ちる
-        item.y = item.exitFromY + (edgeY - item.exitFromY) * e1;
-      } else {
-        var e2 = easeOutCubic((et - PASS_PHASE_START) / (1 - PASS_PHASE_START)); // 通過中はゆっくり、はっきり見せる
-        item.y = edgeY + (offY - edgeY) * e2;
-      }
+      var offY = H + dispH / 2 + 40; // 完全に画面外へ抜けきる位置(余裕を持たせる)
+      item.y = item.exitFromY + (offY - item.exitFromY) * et;
 
       if (et >= 1) {
         item = null;
