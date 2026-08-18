@@ -1372,4 +1372,49 @@
       navigator.serviceWorker.register('sw.js').catch(function () {});
     });
   }
+
+  // TEMP DIAG (比較検証用、確認後に削除)
+  (function () {
+    function getSafeArea(side) {
+      var el = document.createElement('div');
+      el.style.cssText = 'position:fixed; ' + side + ':0; left:0; visibility:hidden; pointer-events:none; height:env(safe-area-inset-' + side + ', 0px);';
+      document.body.appendChild(el);
+      var v = parseFloat(getComputedStyle(el).height) || 0;
+      el.remove();
+      return v;
+    }
+    function findRoot() {
+      return document.getElementById('app') || document.getElementById('stageWrap') || document.body;
+    }
+    var diagEl = document.createElement('div');
+    diagEl.id = 'lfdDiag';
+    diagEl.style.cssText = 'position:fixed; top:0; left:0; z-index:999999; background:rgba(0,0,0,0.75); color:#0f0; font:10px/1.5 monospace; padding:6px 8px; white-space:pre; pointer-events:none;';
+    document.body.appendChild(diagEl);
+    function update() {
+      var root = findRoot();
+      var rect = root.getBoundingClientRect();
+      var vv = window.visualViewport;
+      diagEl.textContent = [
+        'innerH: ' + window.innerHeight,
+        'outerH: ' + window.outerHeight,
+        'screenH: ' + window.screen.height,
+        'availH: ' + window.screen.availHeight,
+        'clientH: ' + document.documentElement.clientHeight,
+        'vvH: ' + (vv ? Math.round(vv.height) : 'NA'),
+        'vvOffsetTop: ' + (vv ? Math.round(vv.offsetTop) : 'NA'),
+        'safeTop: ' + getSafeArea('top'),
+        'safeBottom: ' + getSafeArea('bottom'),
+        'standalone: ' + window.matchMedia('(display-mode: standalone)').matches,
+        'root(#' + (root.id || 'body') + ').top: ' + Math.round(rect.top),
+        'root.bottom: ' + Math.round(rect.bottom),
+        'root.height: ' + Math.round(rect.height)
+      ].join('\n');
+    }
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('orientationchange', update);
+    setTimeout(update, 300);
+    setTimeout(update, 1000);
+    setTimeout(update, 2000);
+  })();
 })();
