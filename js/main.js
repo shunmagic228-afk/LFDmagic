@@ -94,6 +94,15 @@
   window.addEventListener('orientationchange', resize);
   resize();
 
+  // iOSが起動直後にステータスバー/ホームインジケーター周りの最終的な余白を
+  // 確定させるまでに時間差があり、resize/orientationchangeイベントが発生しない
+  // まま#stageの実際の大きさだけが後から変わることがあるため、要素そのものの
+  // 大きさをずっと監視し続け、変化のたびに測り直す。
+  if (typeof ResizeObserver !== 'undefined') {
+    var stageResizeObserver = new ResizeObserver(function () { resize(); });
+    stageResizeObserver.observe(canvas);
+  }
+
   // ---- 設定画面(演者用。ダブルタップ・トリプルタップと違いHTMLの通常ボタンで作る) ----
   var ITEM_EXIT_DELAY_OPTIONS_S = [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   var ITEM_CUTOUT_DELAY_OPTIONS_S = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
