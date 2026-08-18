@@ -42,10 +42,10 @@
   var BOUNDARY_MARGIN   = 90;     // 画面端からこの距離より内側に留めるソフト境界
   var BURST_PHASE_MS    = 550;    // 飛び込みの勢いを残す時間
 
-  var TILT_STRENGTH  = 42;   // 傾き1度あたりの加速度の強さ(重力の強さ。画面全体を動かす主動力)
+  var TILT_STRENGTH  = 52;   // 傾き1度あたりの加速度の強さ(重力の強さ。画面全体を動かす主動力)
   var TILT_DRAG      = 1.1;  // 傾き反映後の速度減衰(大きいほど追従が機敏で止まりやすい)
-  var TILT_MAX_SPEED = 760;  // 傾きによる速度の上限(px/s、暴走防止)
-  var JITTER_MAG      = 18;  // ふわふわとした有機的な揺らぎの強さ
+  var TILT_MAX_SPEED = 950;  // 傾きによる速度の上限(px/s、暴走防止)
+  var JITTER_MAG      = 22;  // ふわふわとした有機的な揺らぎの強さ
 
   var TRAIL_FADE_ALPHA = 0.15; // 光球が存在する間、画面を完全な黒ではなく薄い黒で塗って光跡を残す
 
