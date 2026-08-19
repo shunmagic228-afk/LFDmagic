@@ -1,6 +1,6 @@
 {
-  "name": "光球",
-  "short_name": "光球",
+  "name": "LUMINA",
+  "short_name": "LUMINA",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
