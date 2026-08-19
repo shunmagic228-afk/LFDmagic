@@ -68,6 +68,11 @@
   var itemCutoutDelayMs = (typeof savedSettings.cutoutDelayMs === 'number') ? savedSettings.cutoutDelayMs : DEFAULT_CUTOUT_DELAY_MS;
   var ITEM_EXIT_SLIDE_MS = 1150; // 画面外へ滑り落ちるまでの時間
 
+  // アイテムが完全に消えた直後、指が触れたままだったり触れてしまったりして
+  // 意図せず次の光球が発射されてしまわないよう、消えてからしばらくはタップを無視する
+  var ORB_LAUNCH_COOLDOWN_MS = 5000;
+  var orbLaunchBlockedUntil = 0;
+
   var CORNER_SIZE = 90;              // 画面右下のリセット判定エリアの一辺(px)
   var CORNER_TRIPLE_WINDOW_MS = 700; // この時間内に3回タップされたらリセット/設定画面
 
@@ -714,6 +719,12 @@
       return;
     }
 
+    // アイテムが消えた直後のクールダウン中は、待機中でもタップを無視する
+    if (now < orbLaunchBlockedUntil) {
+      lastTapTime = 0;
+      return;
+    }
+
     // 待機中はワンタップで即発射
     lastTapTime = 0;
     launchOrb(x, y);
@@ -745,6 +756,7 @@
         item = null;
         sparkles.length = 0;
         state = 'idle';
+        orbLaunchBlockedUntil = performance.now() + ORB_LAUNCH_COOLDOWN_MS;
       }, itemCutoutDelayMs);
       return;
     }
@@ -767,6 +779,7 @@
     orbTouchCandidate = false;
     lastTapTime = 0;
     cornerTapTimes.length = 0;
+    orbLaunchBlockedUntil = 0;
     state = 'idle';
   }
 
@@ -1167,6 +1180,7 @@
         item = null;
         sparkles.length = 0;
         state = 'idle';
+        orbLaunchBlockedUntil = now + ORB_LAUNCH_COOLDOWN_MS;
       }
       return;
     }
