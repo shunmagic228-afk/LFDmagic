@@ -1201,12 +1201,14 @@
     }
   }
 
-  // アイテムの中心(x,y)が、表示サイズを考慮して完全に画面外に出ているかどうか(新演出モード用)
-  function isItemFullyOffScreen(x, y) {
-    var ratio = itemImgLoaded ? (itemImg.naturalWidth / itemImg.naturalHeight) : 1;
-    var dispH = ITEM_DISPLAY_HEIGHT * itemScale;
-    var dispW = dispH * ratio;
-    return (x + dispW / 2 < 0) || (x - dispW / 2 > W) || (y + dispH / 2 < 0) || (y - dispH / 2 > H);
+  // 指(タッチ座標)が画面端のこの範囲まで届いたら、「画面外へスワイプした」とみなす。
+  // 指はガラスの物理的な端より外には出せない(clientX/Yが画面の外の値を取ることはない)ため、
+  // 「アイテムが完全に画面外に出るまで待つ」判定は指では到達不可能で、スワイプしても
+  // 一生消えないバグになっていた。実際に指が届く範囲(=画面端付近)で判定する。
+  var EDGE_SWIPE_MARGIN = 40;
+  function isNearScreenEdge(x, y) {
+    return x <= EDGE_SWIPE_MARGIN || x >= W - EDGE_SWIPE_MARGIN ||
+           y <= EDGE_SWIPE_MARGIN || y >= H - EDGE_SWIPE_MARGIN;
   }
 
   function finishItemExitNow(now) {
@@ -1217,23 +1219,23 @@
   }
 
   // 新演出モード: 指でつまんでいる間、アイテムを指に追従させる(光球のドラッグと同じ考え方)。
-  // 画面外へ完全に出た瞬間、指を離すのを待たずその場で退場とする(スワイプで抜き取る動きのため)。
+  // 指が画面端付近まで届いた瞬間、指を離すのを待たずその場で退場とする(スワイプで抜き取る動きのため)。
   function updateItemDragging(now, dt) {
     var followRate = Math.min(1, dt * 14);
     item.x += (itemDragTargetX - item.x) * followRate;
     item.y += (itemDragTargetY - item.y) * followRate;
 
-    if (isItemFullyOffScreen(item.x, item.y)) {
+    if (isNearScreenEdge(itemDragTargetX, itemDragTargetY)) {
       draggingItem = false;
       itemTouchCandidate = false;
       finishItemExitNow(now);
     }
   }
 
-  // 指を離した時に呼ばれる。画面外まで出ていれば退場、画面内に残っていればふんわり中央へ戻す。
+  // 指を離した時に呼ばれる。画面端付近まで出ていれば退場、そうでなければふんわり中央へ戻す。
   function finishItemDrag() {
     if (!item) return;
-    if (isItemFullyOffScreen(item.x, item.y)) {
+    if (isNearScreenEdge(itemDragTargetX, itemDragTargetY)) {
       finishItemExitNow(performance.now());
       return;
     }
