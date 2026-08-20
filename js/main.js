@@ -1227,7 +1227,7 @@
     return x <= marginX || x >= W - marginX || y <= marginY || y >= H - marginY;
   }
 
-  var ITEM_SWIPE_EXIT_MS = 450; // 指の届く範囲を超えてから、画面外へ抜けきるまでの時間
+  var ITEM_SWIPE_EXIT_MS = 320; // 指の届く範囲を超えてから、画面外へ抜けきるまでの時間
 
   function finishItemExitNow(now) {
     item = null;
