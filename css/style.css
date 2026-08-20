@@ -110,33 +110,28 @@ html, body {
   max-width: 300px;
 }
 
-#settingsScreen .durationGrid {
+#settingsScreen .durationSliderRow {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
   max-width: 320px;
 }
 
-#settingsScreen .durationGrid.hidden {
+#settingsScreen .durationSliderRow.hidden {
   display: none;
 }
 
-#settingsScreen .durationBtn {
-  min-width: 56px;
-  min-height: 44px;
-  padding: 8px 14px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  background: rgba(255, 255, 255, 0.06);
-  color: #fff;
-  font-size: 15px;
-  font-family: inherit;
+#settingsScreen .durationSliderRow input[type="range"] {
+  flex: 1;
 }
 
-#settingsScreen .durationBtn.selected {
-  background: #3b82f6;
-  border-color: #3b82f6;
+#settingsScreen .durationSliderValue {
+  min-width: 36px;
+  text-align: right;
+  font-size: 15px;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
 }
 
 #settingsScreen .closeBtn {

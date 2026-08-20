@@ -117,63 +117,58 @@
   }
 
   // ---- 設定画面(演者用。ダブルタップ・トリプルタップと違いHTMLの通常ボタンで作る) ----
-  var ITEM_EXIT_DELAY_OPTIONS_S = [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-  var ITEM_CUTOUT_DELAY_OPTIONS_S = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  // 退場までの時間は1〜10秒(1秒単位)のシークバーで選ぶ。以前のボタン式には0.5秒の選択肢があったため、
+  // 保存済み設定がその値だった場合は範囲内(1秒)にクランプする。
+  itemExitDelayMs = Math.min(10000, Math.max(1000, itemExitDelayMs));
+  itemCutoutDelayMs = Math.min(10000, Math.max(1000, itemCutoutDelayMs));
+
+  var EXIT_DELAY_LABEL_TEXT = {
+    slide: 'アイテムをタップしてから下へ移動し始めるまでの時間',
+    cutout: 'アイテムをタップしてからカットアウトされるまでの時間',
+    new: ''
+  };
+
   var settingsScreen = document.getElementById('settingsScreen');
   var exitModeToggle = document.getElementById('exitModeToggle');
-  var exitDelayGrid = document.getElementById('exitDelayGrid');
-  var cutoutDelayGrid = document.getElementById('cutoutDelayGrid');
+  var exitDelayLabel = document.getElementById('exitDelayLabel');
+  var exitDelaySliderRow = document.getElementById('exitDelaySliderRow');
+  var exitDelaySlider = document.getElementById('exitDelaySlider');
+  var exitDelaySliderValue = document.getElementById('exitDelaySliderValue');
+  var cutoutDelaySliderRow = document.getElementById('cutoutDelaySliderRow');
+  var cutoutDelaySlider = document.getElementById('cutoutDelaySlider');
+  var cutoutDelaySliderValue = document.getElementById('cutoutDelaySliderValue');
   var closeSettingsBtn = document.getElementById('closeSettingsBtn');
   var itemGrid = document.getElementById('itemGrid');
   var addItemBtn = document.getElementById('addItemBtn');
   var itemFileInput = document.getElementById('itemFileInput');
 
-  ITEM_EXIT_DELAY_OPTIONS_S.forEach(function (sec) {
-    var btn = document.createElement('button');
-    btn.className = 'durationBtn';
-    btn.textContent = sec + '秒';
-    btn.dataset.ms = Math.round(sec * 1000);
-    btn.addEventListener('click', function () {
-      itemExitDelayMs = Number(btn.dataset.ms);
-      saveSettings({ exitDelayMs: itemExitDelayMs });
-      updateExitDelayButtons();
-    });
-    exitDelayGrid.appendChild(btn);
-  });
-
-  ITEM_CUTOUT_DELAY_OPTIONS_S.forEach(function (sec) {
-    var btn = document.createElement('button');
-    btn.className = 'durationBtn';
-    btn.textContent = sec + '秒';
-    btn.dataset.ms = Math.round(sec * 1000);
-    btn.addEventListener('click', function () {
-      itemCutoutDelayMs = Number(btn.dataset.ms);
-      saveSettings({ cutoutDelayMs: itemCutoutDelayMs });
-      updateExitDelayButtons();
-    });
-    cutoutDelayGrid.appendChild(btn);
-  });
-
   function updateExitDelayButtons() {
-    var btns = exitDelayGrid.querySelectorAll('.durationBtn');
-    for (var i = 0; i < btns.length; i++) {
-      var isSelected = Number(btns[i].dataset.ms) === itemExitDelayMs;
-      btns[i].classList.toggle('selected', isSelected);
-    }
-    var cbtns = cutoutDelayGrid.querySelectorAll('.durationBtn');
-    for (var j = 0; j < cbtns.length; j++) {
-      var cSelected = Number(cbtns[j].dataset.ms) === itemCutoutDelayMs;
-      cbtns[j].classList.toggle('selected', cSelected);
-    }
+    exitDelaySlider.value = Math.round(itemExitDelayMs / 1000);
+    exitDelaySliderValue.textContent = Math.round(itemExitDelayMs / 1000) + '秒';
+    cutoutDelaySlider.value = Math.round(itemCutoutDelayMs / 1000);
+    cutoutDelaySliderValue.textContent = Math.round(itemCutoutDelayMs / 1000) + '秒';
   }
+
+  exitDelaySlider.addEventListener('input', function () {
+    itemExitDelayMs = Number(exitDelaySlider.value) * 1000;
+    exitDelaySliderValue.textContent = exitDelaySlider.value + '秒';
+    saveSettings({ exitDelayMs: itemExitDelayMs });
+  });
+
+  cutoutDelaySlider.addEventListener('input', function () {
+    itemCutoutDelayMs = Number(cutoutDelaySlider.value) * 1000;
+    cutoutDelaySliderValue.textContent = cutoutDelaySlider.value + '秒';
+    saveSettings({ cutoutDelayMs: itemCutoutDelayMs });
+  });
 
   function updateExitModeUI() {
     var mbtns = exitModeToggle.querySelectorAll('.cropModeToggleBtn');
     for (var i = 0; i < mbtns.length; i++) {
       mbtns[i].classList.toggle('selected', mbtns[i].dataset.mode === exitMode);
     }
-    exitDelayGrid.classList.toggle('hidden', exitMode !== 'slide');
-    cutoutDelayGrid.classList.toggle('hidden', exitMode !== 'cutout');
+    exitDelayLabel.textContent = EXIT_DELAY_LABEL_TEXT[exitMode] || '';
+    exitDelaySliderRow.classList.toggle('hidden', exitMode !== 'slide');
+    cutoutDelaySliderRow.classList.toggle('hidden', exitMode !== 'cutout');
   }
 
   exitModeToggle.addEventListener('click', function (e) {

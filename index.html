@@ -23,18 +23,24 @@
   </div>
 </div>
 <div id="settingsScreen" class="hidden">
-  <div id="devVersionTag">ver2.0</div>
+  <div id="devVersionTag">ver2.1</div>
   <h1>設定</h1>
-  <div class="settingsLabel">アイテムをタップした後の消え方</div>
+  <div class="settingsLabel">アイテムの消え方</div>
   <div class="cropModeToggle" id="exitModeToggle">
     <button class="cropModeToggleBtn selected" data-mode="slide">スライド</button>
     <button class="cropModeToggleBtn" data-mode="cutout">カットアウト</button>
     <button class="cropModeToggleBtn" data-mode="new">新演出</button>
   </div>
 
-  <div class="settingsLabel">アイテムをタップしてから消えるまでの時間</div>
-  <div class="durationGrid" id="exitDelayGrid"></div>
-  <div class="durationGrid hidden" id="cutoutDelayGrid"></div>
+  <div class="settingsLabel" id="exitDelayLabel"></div>
+  <div class="durationSliderRow" id="exitDelaySliderRow">
+    <input type="range" id="exitDelaySlider" min="1" max="10" step="1" value="6">
+    <span class="durationSliderValue" id="exitDelaySliderValue">6秒</span>
+  </div>
+  <div class="durationSliderRow hidden" id="cutoutDelaySliderRow">
+    <input type="range" id="cutoutDelaySlider" min="1" max="10" step="1" value="3">
+    <span class="durationSliderValue" id="cutoutDelaySliderValue">3秒</span>
+  </div>
 
   <div class="settingsLabel">アイテム追加</div>
   <input type="file" id="itemFileInput" class="hiddenFileInput" accept="image/png,image/jpeg,image/webp">
