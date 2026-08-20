@@ -1209,14 +1209,16 @@
     }
   }
 
-  // 指(タッチ座標)が画面端のこの範囲まで届いたら、「画面外へスワイプした」とみなす。
-  // 指はガラスの物理的な端より外には出せない(clientX/Yが画面の外の値を取ることはない)ため、
-  // 「アイテムが完全に画面外に出るまで待つ」判定は指では到達不可能で、スワイプしても
-  // 一生消えないバグになっていた。実際に指が届く範囲(=画面端付近)で判定する。
-  var EDGE_SWIPE_MARGIN = 40;
-  function isNearScreenEdge(x, y) {
-    return x <= EDGE_SWIPE_MARGIN || x >= W - EDGE_SWIPE_MARGIN ||
-           y <= EDGE_SWIPE_MARGIN || y >= H - EDGE_SWIPE_MARGIN;
+  // アイテムの中心(x,y)が画面の端そのものにほぼ達したら、「半分くらいが画面外に
+  // はみ出た」とみなして退場を始める(中心が端に来た時点で、対称な形なら常にちょうど
+  // 半分が外に出ている計算になるため)。指でつまんでいる間はアイテムが指に少し遅れて
+  // 追従する作りなので、指ではなくアイテム自身の見た目の位置で判定する。
+  // ぴったり端に一致することは(追従が指数関数的な近づき方のため)実質ないので、
+  // 数px程度の許容範囲を設ける。
+  var EDGE_CENTER_TOLERANCE = 10;
+  function isItemHalfOffScreen(x, y) {
+    return x <= EDGE_CENTER_TOLERANCE || x >= W - EDGE_CENTER_TOLERANCE ||
+           y <= EDGE_CENTER_TOLERANCE || y >= H - EDGE_CENTER_TOLERANCE;
   }
 
   var ITEM_SWIPE_EXIT_MS = 450; // 指の届く範囲を超えてから、画面外へ抜けきるまでの時間
@@ -1263,23 +1265,25 @@
   }
 
   // 新演出モード: 指でつまんでいる間、アイテムを指に追従させる(光球のドラッグと同じ考え方)。
-  // 指が画面端付近まで届いた瞬間、指を離すのを待たずそのまま自動で画面外へ抜ける演出を始める。
+  // アイテム自身が画面端(=半分くらいはみ出た位置)まで届いた瞬間、指を離すのを待たず
+  // そのまま自動で画面外へ抜ける演出を始める。
   function updateItemDragging(now, dt) {
     var followRate = Math.min(1, dt * 14);
     item.x += (itemDragTargetX - item.x) * followRate;
     item.y += (itemDragTargetY - item.y) * followRate;
 
-    if (isNearScreenEdge(itemDragTargetX, itemDragTargetY)) {
+    if (isItemHalfOffScreen(item.x, item.y)) {
       draggingItem = false;
       itemTouchCandidate = false;
       beginItemAutoExit();
     }
   }
 
-  // 指を離した時に呼ばれる。画面端付近まで出ていれば自動で抜けきる演出へ、そうでなければふんわり中央へ戻す。
+  // 指を離した時に呼ばれる。アイテムが画面端(半分くらいはみ出た位置)まで出ていれば
+  // 自動で抜けきる演出へ、そうでなければふんわり中央へ戻す。
   function finishItemDrag() {
     if (!item) return;
-    if (isNearScreenEdge(itemDragTargetX, itemDragTargetY)) {
+    if (isItemHalfOffScreen(item.x, item.y)) {
       beginItemAutoExit();
       return;
     }
