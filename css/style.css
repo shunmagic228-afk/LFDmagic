@@ -26,6 +26,20 @@ html, body {
   background: #000;
 }
 
+#devVersionTag {
+  position: fixed;
+  top: max(8px, env(safe-area-inset-top, 0px));
+  left: 8px;
+  z-index: 99999;
+  color: #0f0;
+  font-family: monospace;
+  font-size: 12px;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 2px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
 #primeScreen {
   position: fixed;
   inset: 0;

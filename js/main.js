@@ -586,6 +586,8 @@
   var itemTouchCandidate = false; // アイテムの上でポインターダウンした
   var draggingItem = false;       // 実際に指が動いてドラッグに移行した
   var itemDragTargetX = 0, itemDragTargetY = 0;
+  var itemDragVX = 0, itemDragVY = 0; // 直近の指の移動速度(px/s。画面外へ抜ける方向を決めるのに使う)
+  var itemDragLastX = 0, itemDragLastY = 0, itemDragLastT = 0;
 
   function onPointerDown(e) {
     // 同時に複数の指が触れている場合は誤作動防止のため一切無視する
@@ -646,10 +648,16 @@
 
     if (itemTouchCandidate && pointerMoved && !draggingItem) {
       draggingItem = true;
+      itemDragLastX = e.clientX; itemDragLastY = e.clientY; itemDragLastT = performance.now();
     }
     if (draggingItem) {
       itemDragTargetX = e.clientX;
       itemDragTargetY = e.clientY;
+      var ti = performance.now();
+      var dtmsi = Math.max(1, ti - itemDragLastT);
+      itemDragVX = (e.clientX - itemDragLastX) / (dtmsi / 1000);
+      itemDragVY = (e.clientY - itemDragLastY) / (dtmsi / 1000);
+      itemDragLastX = e.clientX; itemDragLastY = e.clientY; itemDragLastT = ti;
     }
   }
 
@@ -1211,6 +1219,8 @@
            y <= EDGE_SWIPE_MARGIN || y >= H - EDGE_SWIPE_MARGIN;
   }
 
+  var ITEM_SWIPE_EXIT_MS = 450; // 指の届く範囲を超えてから、画面外へ抜けきるまでの時間
+
   function finishItemExitNow(now) {
     item = null;
     sparkles.length = 0;
@@ -1218,8 +1228,42 @@
     orbLaunchBlockedUntil = now + ORB_LAUNCH_COOLDOWN_MS;
   }
 
+  // 指が画面端付近まで届いたら、その場で消すのではなく「退場エフェクト」と同じ考え方で、
+  // それまでの指の動きの方向へ、そのまま一定速度で見え続けながら画面外まで抜けきってから消す。
+  // (パッと消えると違和感があり、画面から出ていく瞬間まで見えていてほしいという要望のため)
+  function beginItemAutoExit() {
+    if (!item) return;
+    var spd = Math.hypot(itemDragVX, itemDragVY);
+    var dirX, dirY;
+    if (spd > 20) {
+      dirX = itemDragVX / spd;
+      dirY = itemDragVY / spd;
+    } else {
+      // 指の速度がほぼ無い場合は、画面中心から今の位置への方向を代わりに使う
+      var cx = W / 2, cy = H / 2;
+      var ddx = item.x - cx, ddy = item.y - cy;
+      var len = Math.hypot(ddx, ddy) || 1;
+      dirX = ddx / len;
+      dirY = ddy / len;
+    }
+
+    var ratio = itemImgLoaded ? (itemImg.naturalWidth / itemImg.naturalHeight) : 1;
+    var dispH = ITEM_DISPLAY_HEIGHT * itemScale;
+    var dispW = dispH * ratio;
+    // 画面の対角線の半分+アイテムのサイズぶんを進めば、方向によらず確実に画面外まで抜けきる
+    var clearDist = Math.hypot(W, H) / 2 + Math.max(dispW, dispH) / 2 + 60;
+
+    item.exiting = true;
+    item.autoExiting = true;
+    item.exitStartAt = performance.now();
+    item.exitFromX = item.x;
+    item.exitFromY = item.y;
+    item.exitToX = item.x + dirX * clearDist;
+    item.exitToY = item.y + dirY * clearDist;
+  }
+
   // 新演出モード: 指でつまんでいる間、アイテムを指に追従させる(光球のドラッグと同じ考え方)。
-  // 指が画面端付近まで届いた瞬間、指を離すのを待たずその場で退場とする(スワイプで抜き取る動きのため)。
+  // 指が画面端付近まで届いた瞬間、指を離すのを待たずそのまま自動で画面外へ抜ける演出を始める。
   function updateItemDragging(now, dt) {
     var followRate = Math.min(1, dt * 14);
     item.x += (itemDragTargetX - item.x) * followRate;
@@ -1228,15 +1272,15 @@
     if (isNearScreenEdge(itemDragTargetX, itemDragTargetY)) {
       draggingItem = false;
       itemTouchCandidate = false;
-      finishItemExitNow(now);
+      beginItemAutoExit();
     }
   }
 
-  // 指を離した時に呼ばれる。画面端付近まで出ていれば退場、そうでなければふんわり中央へ戻す。
+  // 指を離した時に呼ばれる。画面端付近まで出ていれば自動で抜けきる演出へ、そうでなければふんわり中央へ戻す。
   function finishItemDrag() {
     if (!item) return;
     if (isNearScreenEdge(itemDragTargetX, itemDragTargetY)) {
-      finishItemExitNow(performance.now());
+      beginItemAutoExit();
       return;
     }
     item.returning = true;
@@ -1263,6 +1307,21 @@
       item.y = item.exitFromY + (offY - item.exitFromY) * et;
 
       if (et >= 1) {
+        item = null;
+        sparkles.length = 0;
+        state = 'idle';
+        orbLaunchBlockedUntil = now + ORB_LAUNCH_COOLDOWN_MS;
+      }
+      return;
+    }
+
+    if (item.autoExiting) {
+      // 新演出: 指の届く範囲を超えた後、それまでの動きの方向へ一定速度で進み続け、
+      // 完全に画面外へ抜けきる(見えなくなる)までアイテムを表示し続けてから退場を完了する
+      var etA = Math.min(1, (now - item.exitStartAt) / ITEM_SWIPE_EXIT_MS);
+      item.x = item.exitFromX + (item.exitToX - item.exitFromX) * etA;
+      item.y = item.exitFromY + (item.exitToY - item.exitFromY) * etA;
+      if (etA >= 1) {
         item = null;
         sparkles.length = 0;
         state = 'idle';
