@@ -60,18 +60,16 @@
   var REVEAL_END_CT          = 0.95; // 完全に開ききるタイミング(進行度ct)
 
   // アイテムをタップした後の消え方: 'slide'=下へ滑り落ちて退場(既存) / 'cutout'=その場で瞬時に消える(既存) /
-  // 'new'=横(右)へスライドして画面外へ退場(新演出、参考動画のコインを横に抜き取る動きに合わせたもの)
+  // 'new'=新演出。指でつまんで動かせ(光球と同じ)、画面外までスワイプすると退場。
+  // 指を離した時点で画面内に戻っていれば、ふんわりと中央へ戻る(ジャイロ・重力は使わない)。
   var DEFAULT_CUTOUT_DELAY_MS = 3000;
-  var DEFAULT_NEW_MODE_DELAY_MS = 6000;
   var exitMode = (savedSettings.exitMode === 'cutout' || savedSettings.exitMode === 'new') ? savedSettings.exitMode : 'slide';
   // アイテムをタップしてから退場を始めるまでの間(設定画面で変更可能。未設定なら6秒がデフォルト)
   var itemExitDelayMs = (typeof savedSettings.exitDelayMs === 'number') ? savedSettings.exitDelayMs : DEFAULT_EXIT_DELAY_MS;
   // アイテムをタップしてからカットアウトで消えるまでの間(カットアウトモード用。未設定なら3秒がデフォルト)
   var itemCutoutDelayMs = (typeof savedSettings.cutoutDelayMs === 'number') ? savedSettings.cutoutDelayMs : DEFAULT_CUTOUT_DELAY_MS;
-  // アイテムをタップしてから新演出モードで退場を始めるまでの間(未設定なら6秒がデフォルト)
-  var itemNewModeDelayMs = (typeof savedSettings.newModeDelayMs === 'number') ? savedSettings.newModeDelayMs : DEFAULT_NEW_MODE_DELAY_MS;
   var ITEM_EXIT_SLIDE_MS = 1150; // 画面外へ滑り落ちるまでの時間(スライドモード用)
-  var ITEM_EXIT_SIDE_MS = 1150; // 画面外へ横に抜けきるまでの時間(新演出モード用)
+  var ITEM_RETURN_MS = 500; // 新演出モードで、画面内で指を離した時に中央へふんわり戻るまでの時間
 
   // アイテムが完全に消えた直後、指が触れたままだったり触れてしまったりして
   // 意図せず次の光球が発射されてしまわないよう、消えてからしばらくはタップを無視する
@@ -121,12 +119,10 @@
   // ---- 設定画面(演者用。ダブルタップ・トリプルタップと違いHTMLの通常ボタンで作る) ----
   var ITEM_EXIT_DELAY_OPTIONS_S = [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   var ITEM_CUTOUT_DELAY_OPTIONS_S = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-  var ITEM_NEW_MODE_DELAY_OPTIONS_S = [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   var settingsScreen = document.getElementById('settingsScreen');
   var exitModeToggle = document.getElementById('exitModeToggle');
   var exitDelayGrid = document.getElementById('exitDelayGrid');
   var cutoutDelayGrid = document.getElementById('cutoutDelayGrid');
-  var newModeDelayGrid = document.getElementById('newModeDelayGrid');
   var closeSettingsBtn = document.getElementById('closeSettingsBtn');
   var itemGrid = document.getElementById('itemGrid');
   var addItemBtn = document.getElementById('addItemBtn');
@@ -158,19 +154,6 @@
     cutoutDelayGrid.appendChild(btn);
   });
 
-  ITEM_NEW_MODE_DELAY_OPTIONS_S.forEach(function (sec) {
-    var btn = document.createElement('button');
-    btn.className = 'durationBtn';
-    btn.textContent = sec + '秒';
-    btn.dataset.ms = Math.round(sec * 1000);
-    btn.addEventListener('click', function () {
-      itemNewModeDelayMs = Number(btn.dataset.ms);
-      saveSettings({ newModeDelayMs: itemNewModeDelayMs });
-      updateExitDelayButtons();
-    });
-    newModeDelayGrid.appendChild(btn);
-  });
-
   function updateExitDelayButtons() {
     var btns = exitDelayGrid.querySelectorAll('.durationBtn');
     for (var i = 0; i < btns.length; i++) {
@@ -182,11 +165,6 @@
       var cSelected = Number(cbtns[j].dataset.ms) === itemCutoutDelayMs;
       cbtns[j].classList.toggle('selected', cSelected);
     }
-    var nbtns = newModeDelayGrid.querySelectorAll('.durationBtn');
-    for (var k = 0; k < nbtns.length; k++) {
-      var nSelected = Number(nbtns[k].dataset.ms) === itemNewModeDelayMs;
-      nbtns[k].classList.toggle('selected', nSelected);
-    }
   }
 
   function updateExitModeUI() {
@@ -196,7 +174,6 @@
     }
     exitDelayGrid.classList.toggle('hidden', exitMode !== 'slide');
     cutoutDelayGrid.classList.toggle('hidden', exitMode !== 'cutout');
-    newModeDelayGrid.classList.toggle('hidden', exitMode !== 'new');
   }
 
   exitModeToggle.addEventListener('click', function (e) {
@@ -605,6 +582,11 @@
   var dragVX = 0, dragVY = 0;
   var dragLastX = 0, dragLastY = 0, dragLastT = 0;
 
+  // ---- アイテムを指でつまんで動かす(新演出モード専用) ----
+  var itemTouchCandidate = false; // アイテムの上でポインターダウンした
+  var draggingItem = false;       // 実際に指が動いてドラッグに移行した
+  var itemDragTargetX = 0, itemDragTargetY = 0;
+
   function onPointerDown(e) {
     // 同時に複数の指が触れている場合は誤作動防止のため一切無視する
     if (activePointerId !== null) {
@@ -612,6 +594,8 @@
       lastTapTime = 0;
       draggingOrb = false;
       orbTouchCandidate = false;
+      draggingItem = false;
+      itemTouchCandidate = false;
       return;
     }
     if (e.button !== undefined && e.button !== 0) return; // 右クリック等は無視
@@ -628,6 +612,14 @@
       orbTouchCandidate = false;
     }
     draggingOrb = false;
+
+    if (state === 'item' && exitMode === 'new' && item && !item.exiting && !item.returning &&
+        Math.hypot(e.clientX - item.x, e.clientY - item.y) <= ITEM_HIT_RADIUS * itemScale) {
+      itemTouchCandidate = true;
+    } else {
+      itemTouchCandidate = false;
+    }
+    draggingItem = false;
   }
 
   function onPointerMove(e) {
@@ -651,6 +643,14 @@
       dragVY = (e.clientY - dragLastY) / (dtms / 1000);
       dragLastX = e.clientX; dragLastY = e.clientY; dragLastT = t;
     }
+
+    if (itemTouchCandidate && pointerMoved && !draggingItem) {
+      draggingItem = true;
+    }
+    if (draggingItem) {
+      itemDragTargetX = e.clientX;
+      itemDragTargetY = e.clientY;
+    }
   }
 
   function onPointerUp(e) {
@@ -669,6 +669,15 @@
       return;
     }
     orbTouchCandidate = false;
+
+    if (draggingItem) {
+      draggingItem = false;
+      itemTouchCandidate = false;
+      finishItemDrag();
+      lastTapTime = 0;
+      return;
+    }
+    itemTouchCandidate = false;
 
     var duration = performance.now() - pointerStartT;
     var isValidTap = !pointerMoved && duration <= TAP_MAX_DURATION;
@@ -689,6 +698,9 @@
     lastTapTime = 0;
     draggingOrb = false;
     orbTouchCandidate = false;
+    if (draggingItem) finishItemDrag();
+    draggingItem = false;
+    itemTouchCandidate = false;
   }
 
   canvas.addEventListener('pointerdown', onPointerDown, { passive: true });
@@ -722,8 +734,9 @@
     }
 
     if (state === 'item') {
-      // アイテムへの「シングルタップ」で、0.5秒後に画面下へ滑り落ちて退場
-      if (item && !item.exiting && Math.hypot(x - item.x, y - item.y) <= ITEM_HIT_RADIUS * itemScale) {
+      // アイテムへの「シングルタップ」で、設定時間後に退場(スライド/カットアウト用)。
+      // 新演出モードはタップではなく指でつまんで動かす方式のため、ここでは何もしない。
+      if (exitMode !== 'new' && item && !item.exiting && Math.hypot(x - item.x, y - item.y) <= ITEM_HIT_RADIUS * itemScale) {
         scheduleItemExit();
       }
       lastTapTime = 0;
@@ -773,7 +786,7 @@
 
   // アイテムへのタップ後、設定された時間だけ待ってから消す。
   // 'slide'(スライド): 画面下へ滑り落として退場。'cutout': その場で瞬時に消える。
-  // 'new'(新演出): 画面右へスライドして退場(スマホ裏に隠した実物を横から引き抜くタイミングに合わせる)。
+  // 'new'(新演出)はタップではなく指でつまんで動かす方式のため、ここは呼ばれない。
   function scheduleItemExit() {
     if (!item || item.exiting) return;
     item.exiting = true;
@@ -785,16 +798,6 @@
         state = 'idle';
         orbLaunchBlockedUntil = performance.now() + ORB_LAUNCH_COOLDOWN_MS;
       }, itemCutoutDelayMs);
-      return;
-    }
-    if (exitMode === 'new') {
-      setTimeout(function () {
-        if (state !== 'item' || !item) return;
-        item.slidingSide = true;
-        item.exitStartAt = performance.now();
-        item.exitFromX = item.x;
-        item.exitFromY = item.y;
-      }, itemNewModeDelayMs);
       return;
     }
     setTimeout(function () {
@@ -814,6 +817,8 @@
     sparkles.length = 0;
     draggingOrb = false;
     orbTouchCandidate = false;
+    draggingItem = false;
+    itemTouchCandidate = false;
     lastTapTime = 0;
     cornerTapTimes.length = 0;
     orbLaunchBlockedUntil = 0;
@@ -1196,6 +1201,48 @@
     }
   }
 
+  // アイテムの中心(x,y)が、表示サイズを考慮して完全に画面外に出ているかどうか(新演出モード用)
+  function isItemFullyOffScreen(x, y) {
+    var ratio = itemImgLoaded ? (itemImg.naturalWidth / itemImg.naturalHeight) : 1;
+    var dispH = ITEM_DISPLAY_HEIGHT * itemScale;
+    var dispW = dispH * ratio;
+    return (x + dispW / 2 < 0) || (x - dispW / 2 > W) || (y + dispH / 2 < 0) || (y - dispH / 2 > H);
+  }
+
+  function finishItemExitNow(now) {
+    item = null;
+    sparkles.length = 0;
+    state = 'idle';
+    orbLaunchBlockedUntil = now + ORB_LAUNCH_COOLDOWN_MS;
+  }
+
+  // 新演出モード: 指でつまんでいる間、アイテムを指に追従させる(光球のドラッグと同じ考え方)。
+  // 画面外へ完全に出た瞬間、指を離すのを待たずその場で退場とする(スワイプで抜き取る動きのため)。
+  function updateItemDragging(now, dt) {
+    var followRate = Math.min(1, dt * 14);
+    item.x += (itemDragTargetX - item.x) * followRate;
+    item.y += (itemDragTargetY - item.y) * followRate;
+
+    if (isItemFullyOffScreen(item.x, item.y)) {
+      draggingItem = false;
+      itemTouchCandidate = false;
+      finishItemExitNow(now);
+    }
+  }
+
+  // 指を離した時に呼ばれる。画面外まで出ていれば退場、画面内に残っていればふんわり中央へ戻す。
+  function finishItemDrag() {
+    if (!item) return;
+    if (isItemFullyOffScreen(item.x, item.y)) {
+      finishItemExitNow(performance.now());
+      return;
+    }
+    item.returning = true;
+    item.returnStartAt = performance.now();
+    item.returnFromX = item.x;
+    item.returnFromY = item.y;
+  }
+
   function updateItemFloating(now) {
     if (item.sliding) {
       var et = Math.min(1, (now - item.exitStartAt) / ITEM_EXIT_SLIDE_MS);
@@ -1222,26 +1269,15 @@
       return;
     }
 
-    if (item.slidingSide) {
-      // 新演出: 画面右へ抜けて退場する(スマホ裏に隠した実物を横から引き抜くタイミングに合わせるため)。
-      // 縦方向はスライドモードの「中心へ寄せる」動きと同じ考え方で、退場前に定位置の高さへ寄せておく。
-      // 横方向はスライドモードでの反省(速度カーブの継ぎ目で「ぐん」となる違和感)を踏まえ、
-      // 最初から最後まで完全に一定速度で動かす。
-      var etS = Math.min(1, (now - item.exitStartAt) / ITEM_EXIT_SIDE_MS);
-      var centerEaseY = easeInOutCubic(Math.min(1, etS / 0.75));
-      item.y = item.exitFromY + (getItemRestY() - item.exitFromY) * centerEaseY;
-
-      var ratioS = itemImgLoaded ? (itemImg.naturalWidth / itemImg.naturalHeight) : 1;
-      var dispHS = ITEM_DISPLAY_HEIGHT * itemScale;
-      var dispWS = dispHS * ratioS;
-      var offXS = W + dispWS / 2 + 40; // 完全に画面右外へ抜けきる位置(余裕を持たせる)
-      item.x = item.exitFromX + (offXS - item.exitFromX) * etS;
-
-      if (etS >= 1) {
-        item = null;
-        sparkles.length = 0;
-        state = 'idle';
-        orbLaunchBlockedUntil = now + ORB_LAUNCH_COOLDOWN_MS;
+    if (item.returning) {
+      // 新演出: 画面内で指を離した時、ジャイロや慣性は使わずふんわりと中央の定位置へ戻す
+      var etR = Math.min(1, (now - item.returnStartAt) / ITEM_RETURN_MS);
+      var easeR = easeOutCubic(etR);
+      item.x = item.returnFromX + (W / 2 - item.returnFromX) * easeR;
+      item.y = item.returnFromY + (getItemRestY() - item.returnFromY) * easeR;
+      if (etR >= 1) {
+        item.returning = false;
+        item.bornAt = now; // 通常の漂いへ、今の位置(=定位置)からゆらぎゼロで滑らかに引き継ぐ
       }
       return;
     }
@@ -1380,7 +1416,11 @@
     } else if (state === 'transforming' && orb) {
       updateTransforming(now, dt);
     } else if (state === 'item' && item) {
-      updateItemFloating(now);
+      if (draggingItem) {
+        updateItemDragging(now, dt);
+      } else {
+        updateItemFloating(now);
+      }
     }
     updateSparkles(now, dt);
 
