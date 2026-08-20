@@ -59,14 +59,19 @@
   var REVEAL_START_CT        = 0.62; // アイリス状の写し出しを開き始めるタイミング(進行度ct)
   var REVEAL_END_CT          = 0.95; // 完全に開ききるタイミング(進行度ct)
 
-  // アイテムをタップした後の消え方: 'slide'=下へ滑り落ちて退場(既存) / 'cutout'=その場で瞬時に消える(新規)
+  // アイテムをタップした後の消え方: 'slide'=下へ滑り落ちて退場(既存) / 'cutout'=その場で瞬時に消える(既存) /
+  // 'new'=横(右)へスライドして画面外へ退場(新演出、参考動画のコインを横に抜き取る動きに合わせたもの)
   var DEFAULT_CUTOUT_DELAY_MS = 3000;
-  var exitMode = savedSettings.exitMode === 'cutout' ? 'cutout' : 'slide';
+  var DEFAULT_NEW_MODE_DELAY_MS = 6000;
+  var exitMode = (savedSettings.exitMode === 'cutout' || savedSettings.exitMode === 'new') ? savedSettings.exitMode : 'slide';
   // アイテムをタップしてから退場を始めるまでの間(設定画面で変更可能。未設定なら6秒がデフォルト)
   var itemExitDelayMs = (typeof savedSettings.exitDelayMs === 'number') ? savedSettings.exitDelayMs : DEFAULT_EXIT_DELAY_MS;
   // アイテムをタップしてからカットアウトで消えるまでの間(カットアウトモード用。未設定なら3秒がデフォルト)
   var itemCutoutDelayMs = (typeof savedSettings.cutoutDelayMs === 'number') ? savedSettings.cutoutDelayMs : DEFAULT_CUTOUT_DELAY_MS;
-  var ITEM_EXIT_SLIDE_MS = 1150; // 画面外へ滑り落ちるまでの時間
+  // アイテムをタップしてから新演出モードで退場を始めるまでの間(未設定なら6秒がデフォルト)
+  var itemNewModeDelayMs = (typeof savedSettings.newModeDelayMs === 'number') ? savedSettings.newModeDelayMs : DEFAULT_NEW_MODE_DELAY_MS;
+  var ITEM_EXIT_SLIDE_MS = 1150; // 画面外へ滑り落ちるまでの時間(スライドモード用)
+  var ITEM_EXIT_SIDE_MS = 1150; // 画面外へ横に抜けきるまでの時間(新演出モード用)
 
   // アイテムが完全に消えた直後、指が触れたままだったり触れてしまったりして
   // 意図せず次の光球が発射されてしまわないよう、消えてからしばらくはタップを無視する
@@ -116,10 +121,12 @@
   // ---- 設定画面(演者用。ダブルタップ・トリプルタップと違いHTMLの通常ボタンで作る) ----
   var ITEM_EXIT_DELAY_OPTIONS_S = [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   var ITEM_CUTOUT_DELAY_OPTIONS_S = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  var ITEM_NEW_MODE_DELAY_OPTIONS_S = [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   var settingsScreen = document.getElementById('settingsScreen');
   var exitModeToggle = document.getElementById('exitModeToggle');
   var exitDelayGrid = document.getElementById('exitDelayGrid');
   var cutoutDelayGrid = document.getElementById('cutoutDelayGrid');
+  var newModeDelayGrid = document.getElementById('newModeDelayGrid');
   var closeSettingsBtn = document.getElementById('closeSettingsBtn');
   var itemGrid = document.getElementById('itemGrid');
   var addItemBtn = document.getElementById('addItemBtn');
@@ -151,6 +158,19 @@
     cutoutDelayGrid.appendChild(btn);
   });
 
+  ITEM_NEW_MODE_DELAY_OPTIONS_S.forEach(function (sec) {
+    var btn = document.createElement('button');
+    btn.className = 'durationBtn';
+    btn.textContent = sec + '秒';
+    btn.dataset.ms = Math.round(sec * 1000);
+    btn.addEventListener('click', function () {
+      itemNewModeDelayMs = Number(btn.dataset.ms);
+      saveSettings({ newModeDelayMs: itemNewModeDelayMs });
+      updateExitDelayButtons();
+    });
+    newModeDelayGrid.appendChild(btn);
+  });
+
   function updateExitDelayButtons() {
     var btns = exitDelayGrid.querySelectorAll('.durationBtn');
     for (var i = 0; i < btns.length; i++) {
@@ -162,6 +182,11 @@
       var cSelected = Number(cbtns[j].dataset.ms) === itemCutoutDelayMs;
       cbtns[j].classList.toggle('selected', cSelected);
     }
+    var nbtns = newModeDelayGrid.querySelectorAll('.durationBtn');
+    for (var k = 0; k < nbtns.length; k++) {
+      var nSelected = Number(nbtns[k].dataset.ms) === itemNewModeDelayMs;
+      nbtns[k].classList.toggle('selected', nSelected);
+    }
   }
 
   function updateExitModeUI() {
@@ -171,6 +196,7 @@
     }
     exitDelayGrid.classList.toggle('hidden', exitMode !== 'slide');
     cutoutDelayGrid.classList.toggle('hidden', exitMode !== 'cutout');
+    newModeDelayGrid.classList.toggle('hidden', exitMode !== 'new');
   }
 
   exitModeToggle.addEventListener('click', function (e) {
@@ -746,7 +772,8 @@
   }
 
   // アイテムへのタップ後、設定された時間だけ待ってから消す。
-  // 'slide'(退場スライド): 画面下へ滑り落として退場。'cutout': その場で瞬時に消える。
+  // 'slide'(スライド): 画面下へ滑り落として退場。'cutout': その場で瞬時に消える。
+  // 'new'(新演出): 画面右へスライドして退場(スマホ裏に隠した実物を横から引き抜くタイミングに合わせる)。
   function scheduleItemExit() {
     if (!item || item.exiting) return;
     item.exiting = true;
@@ -758,6 +785,16 @@
         state = 'idle';
         orbLaunchBlockedUntil = performance.now() + ORB_LAUNCH_COOLDOWN_MS;
       }, itemCutoutDelayMs);
+      return;
+    }
+    if (exitMode === 'new') {
+      setTimeout(function () {
+        if (state !== 'item' || !item) return;
+        item.slidingSide = true;
+        item.exitStartAt = performance.now();
+        item.exitFromX = item.x;
+        item.exitFromY = item.y;
+      }, itemNewModeDelayMs);
       return;
     }
     setTimeout(function () {
@@ -1177,6 +1214,30 @@
       item.y = item.exitFromY + (offY - item.exitFromY) * et;
 
       if (et >= 1) {
+        item = null;
+        sparkles.length = 0;
+        state = 'idle';
+        orbLaunchBlockedUntil = now + ORB_LAUNCH_COOLDOWN_MS;
+      }
+      return;
+    }
+
+    if (item.slidingSide) {
+      // 新演出: 画面右へ抜けて退場する(スマホ裏に隠した実物を横から引き抜くタイミングに合わせるため)。
+      // 縦方向はスライドモードの「中心へ寄せる」動きと同じ考え方で、退場前に定位置の高さへ寄せておく。
+      // 横方向はスライドモードでの反省(速度カーブの継ぎ目で「ぐん」となる違和感)を踏まえ、
+      // 最初から最後まで完全に一定速度で動かす。
+      var etS = Math.min(1, (now - item.exitStartAt) / ITEM_EXIT_SIDE_MS);
+      var centerEaseY = easeInOutCubic(Math.min(1, etS / 0.75));
+      item.y = item.exitFromY + (getItemRestY() - item.exitFromY) * centerEaseY;
+
+      var ratioS = itemImgLoaded ? (itemImg.naturalWidth / itemImg.naturalHeight) : 1;
+      var dispHS = ITEM_DISPLAY_HEIGHT * itemScale;
+      var dispWS = dispHS * ratioS;
+      var offXS = W + dispWS / 2 + 40; // 完全に画面右外へ抜けきる位置(余裕を持たせる)
+      item.x = item.exitFromX + (offXS - item.exitFromX) * etS;
+
+      if (etS >= 1) {
         item = null;
         sparkles.length = 0;
         state = 'idle';
