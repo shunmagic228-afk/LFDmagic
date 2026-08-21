@@ -71,7 +71,10 @@
   var itemExitDelayMs = (typeof savedSettings.exitDelayMs === 'number') ? savedSettings.exitDelayMs : DEFAULT_EXIT_DELAY_MS;
   // アイテムをタップしてからカットアウトで消えるまでの間(カットアウトモード用。未設定なら3秒がデフォルト)
   var itemCutoutDelayMs = (typeof savedSettings.cutoutDelayMs === 'number') ? savedSettings.cutoutDelayMs : DEFAULT_CUTOUT_DELAY_MS;
-  var ITEM_EXIT_SLIDE_MS = 1150; // 画面外へ滑り落ちるまでの時間(スライドモード用)
+  // 自動スライドモードの退場スピード。アイテムのサイズによって理想の速さが違うため選べるようにした。
+  // 'slow'=既存の速さ、'normal'=そこからほんの少し速くしたもの。未設定なら既存動作を保つため'slow'がデフォルト
+  var ITEM_EXIT_SLIDE_MS_BY_SPEED = { slow: 1150, normal: 1050 };
+  var exitSlideSpeed = ITEM_EXIT_SLIDE_MS_BY_SPEED[savedSettings.exitSlideSpeed] ? savedSettings.exitSlideSpeed : 'slow';
   var ITEM_RETURN_MS = 500; // 新演出モードで、画面内で指を離した時に中央へふんわり戻るまでの時間
 
   // アイテムが完全に消えた直後、指が触れたままだったり触れてしまったりして
@@ -135,6 +138,8 @@
   var exitModeToggle = document.getElementById('exitModeToggle');
   var slideDirectionLabel = document.getElementById('slideDirectionLabel');
   var slideDirectionToggle = document.getElementById('slideDirectionToggle');
+  var slideSpeedLabel = document.getElementById('slideSpeedLabel');
+  var slideSpeedToggle = document.getElementById('slideSpeedToggle');
   var exitDelayLabel = document.getElementById('exitDelayLabel');
   var exitDelaySliderRow = document.getElementById('exitDelaySliderRow');
   var exitDelaySlider = document.getElementById('exitDelaySlider');
@@ -176,6 +181,8 @@
     cutoutDelaySliderRow.classList.toggle('hidden', exitMode !== 'cutout');
     slideDirectionLabel.classList.toggle('hidden', exitMode !== 'slide');
     slideDirectionToggle.classList.toggle('hidden', exitMode !== 'slide');
+    slideSpeedLabel.classList.toggle('hidden', exitMode !== 'slide');
+    slideSpeedToggle.classList.toggle('hidden', exitMode !== 'slide');
   }
 
   exitModeToggle.addEventListener('click', function (e) {
@@ -201,10 +208,26 @@
     updateSlideDirectionUI();
   });
 
+  function updateSlideSpeedUI() {
+    var sbtns = slideSpeedToggle.querySelectorAll('.cropModeToggleBtn');
+    for (var i = 0; i < sbtns.length; i++) {
+      sbtns[i].classList.toggle('selected', sbtns[i].dataset.speed === exitSlideSpeed);
+    }
+  }
+
+  slideSpeedToggle.addEventListener('click', function (e) {
+    var btn = e.target.closest ? e.target.closest('.cropModeToggleBtn') : null;
+    if (!btn) return;
+    exitSlideSpeed = btn.dataset.speed;
+    saveSettings({ exitSlideSpeed: exitSlideSpeed });
+    updateSlideSpeedUI();
+  });
+
   function openSettings() {
     updateExitDelayButtons();
     updateExitModeUI();
     updateSlideDirectionUI();
+    updateSlideSpeedUI();
     renderItemGrid();
     settingsScreen.classList.remove('hidden');
   }
@@ -1318,7 +1341,7 @@
 
   function updateItemFloating(now) {
     if (item.sliding) {
-      var et = Math.min(1, (now - item.exitStartAt) / ITEM_EXIT_SLIDE_MS);
+      var et = Math.min(1, (now - item.exitStartAt) / ITEM_EXIT_SLIDE_MS_BY_SPEED[exitSlideSpeed]);
       // 漂っている間に横(または縦)へ寄っていても、退場が始まったらその軸を中心へ寄せてから
       // 抜けていく(退場のたびに画面中心から出ていったように見せるため)。動き出しも唐突に
       // ならないよう、ゆっくり始まってゆっくり終わる、ふんわりとした動きにする
