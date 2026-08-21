@@ -73,7 +73,7 @@
   var itemCutoutDelayMs = (typeof savedSettings.cutoutDelayMs === 'number') ? savedSettings.cutoutDelayMs : DEFAULT_CUTOUT_DELAY_MS;
   // 自動スライドモードの退場スピード。アイテムのサイズによって理想の速さが違うため選べるようにした。
   // 'slow'=既存の速さ、'normal'=そこからほんの少し速くしたもの。未設定なら既存動作を保つため'slow'がデフォルト
-  var ITEM_EXIT_SLIDE_MS_BY_SPEED = { slow: 1150, normal: 750, fast: 550 };
+  var ITEM_EXIT_SLIDE_MS_BY_SPEED = { slow: 1150, normal: 680, fast: 550 };
   var exitSlideSpeed = ITEM_EXIT_SLIDE_MS_BY_SPEED[savedSettings.exitSlideSpeed] ? savedSettings.exitSlideSpeed : 'slow';
   var ITEM_RETURN_MS = 500; // 新演出モードで、画面内で指を離した時に中央へふんわり戻るまでの時間
 
