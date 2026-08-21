@@ -110,6 +110,10 @@ html, body {
   max-width: 300px;
 }
 
+#settingsScreen .settingsLabel.hidden {
+  display: none;
+}
+
 #settingsScreen .durationSliderRow {
   display: flex;
   align-items: center;
@@ -372,6 +376,10 @@ html, body {
   border-radius: 10px;
   padding: 3px;
   margin: 0 auto;
+}
+
+.cropModeToggle.hidden {
+  display: none;
 }
 
 .cropModeToggleBtn {

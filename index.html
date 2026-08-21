@@ -23,13 +23,21 @@
   </div>
 </div>
 <div id="settingsScreen" class="hidden">
-  <div id="devVersionTag">ver2.2</div>
+  <div id="devVersionTag">ver2.3</div>
   <h1>設定</h1>
   <div class="settingsLabel">アイテムの消え方</div>
   <div class="cropModeToggle" id="exitModeToggle">
     <button class="cropModeToggleBtn selected" data-mode="slide">自動スライド</button>
     <button class="cropModeToggleBtn" data-mode="cutout">カットアウト</button>
     <button class="cropModeToggleBtn" data-mode="new">ノーマル</button>
+  </div>
+
+  <div class="settingsLabel hidden" id="slideDirectionLabel">自動スライドの退場方向</div>
+  <div class="cropModeToggle hidden" id="slideDirectionToggle">
+    <button class="cropModeToggleBtn selected" data-direction="down">下</button>
+    <button class="cropModeToggleBtn" data-direction="up">上</button>
+    <button class="cropModeToggleBtn" data-direction="left">左</button>
+    <button class="cropModeToggleBtn" data-direction="right">右</button>
   </div>
 
   <div class="settingsLabel" id="exitDelayLabel"></div>

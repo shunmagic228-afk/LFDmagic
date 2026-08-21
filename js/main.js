@@ -64,6 +64,9 @@
   // 指を離した時点で画面内に戻っていれば、ふんわりと中央へ戻る(ジャイロ・重力は使わない)。
   var DEFAULT_CUTOUT_DELAY_MS = 3000;
   var exitMode = (savedSettings.exitMode === 'cutout' || savedSettings.exitMode === 'new') ? savedSettings.exitMode : 'slide';
+  // 自動スライドモードの退場方向。'down'(既存の下抜け) / 'up' / 'left' / 'right'
+  var VALID_SLIDE_DIRECTIONS = { up: true, down: true, left: true, right: true };
+  var exitSlideDirection = VALID_SLIDE_DIRECTIONS[savedSettings.exitSlideDirection] ? savedSettings.exitSlideDirection : 'down';
   // アイテムをタップしてから退場を始めるまでの間(設定画面で変更可能。未設定なら6秒がデフォルト)
   var itemExitDelayMs = (typeof savedSettings.exitDelayMs === 'number') ? savedSettings.exitDelayMs : DEFAULT_EXIT_DELAY_MS;
   // アイテムをタップしてからカットアウトで消えるまでの間(カットアウトモード用。未設定なら3秒がデフォルト)
@@ -130,6 +133,8 @@
 
   var settingsScreen = document.getElementById('settingsScreen');
   var exitModeToggle = document.getElementById('exitModeToggle');
+  var slideDirectionLabel = document.getElementById('slideDirectionLabel');
+  var slideDirectionToggle = document.getElementById('slideDirectionToggle');
   var exitDelayLabel = document.getElementById('exitDelayLabel');
   var exitDelaySliderRow = document.getElementById('exitDelaySliderRow');
   var exitDelaySlider = document.getElementById('exitDelaySlider');
@@ -169,6 +174,8 @@
     exitDelayLabel.textContent = EXIT_DELAY_LABEL_TEXT[exitMode] || '';
     exitDelaySliderRow.classList.toggle('hidden', exitMode !== 'slide');
     cutoutDelaySliderRow.classList.toggle('hidden', exitMode !== 'cutout');
+    slideDirectionLabel.classList.toggle('hidden', exitMode !== 'slide');
+    slideDirectionToggle.classList.toggle('hidden', exitMode !== 'slide');
   }
 
   exitModeToggle.addEventListener('click', function (e) {
@@ -179,9 +186,25 @@
     updateExitModeUI();
   });
 
+  function updateSlideDirectionUI() {
+    var dbtns = slideDirectionToggle.querySelectorAll('.cropModeToggleBtn');
+    for (var i = 0; i < dbtns.length; i++) {
+      dbtns[i].classList.toggle('selected', dbtns[i].dataset.direction === exitSlideDirection);
+    }
+  }
+
+  slideDirectionToggle.addEventListener('click', function (e) {
+    var btn = e.target.closest ? e.target.closest('.cropModeToggleBtn') : null;
+    if (!btn) return;
+    exitSlideDirection = btn.dataset.direction;
+    saveSettings({ exitSlideDirection: exitSlideDirection });
+    updateSlideDirectionUI();
+  });
+
   function openSettings() {
     updateExitDelayButtons();
     updateExitModeUI();
+    updateSlideDirectionUI();
     renderItemGrid();
     settingsScreen.classList.remove('hidden');
   }
@@ -1222,7 +1245,7 @@
     return x <= marginX || x >= W - marginX || y <= marginY || y >= H - marginY;
   }
 
-  var ITEM_SWIPE_EXIT_MS = 320; // 指の届く範囲を超えてから、画面外へ抜けきるまでの時間
+  var ITEM_SWIPE_EXIT_MS = 290; // 指の届く範囲を超えてから、画面外へ抜けきるまでの時間
 
   function finishItemExitNow(now) {
     item = null;
@@ -1296,19 +1319,36 @@
   function updateItemFloating(now) {
     if (item.sliding) {
       var et = Math.min(1, (now - item.exitStartAt) / ITEM_EXIT_SLIDE_MS);
-      // 漂っている間に左右へ寄っていても、退場が始まったら中心へ寄せてから落としていく
-      // (退場のたびに画面中心から出ていったように見せるため)。動き出しも唐突にならないよう、
-      // ゆっくり始まってゆっくり終わる、ふんわりとした動きにする
+      // 漂っている間に横(または縦)へ寄っていても、退場が始まったらその軸を中心へ寄せてから
+      // 抜けていく(退場のたびに画面中心から出ていったように見せるため)。動き出しも唐突に
+      // ならないよう、ゆっくり始まってゆっくり終わる、ふんわりとした動きにする
       var centerEase = easeInOutCubic(Math.min(1, et / 0.75));
-      item.x = item.exitFromX + (W / 2 - item.exitFromX) * centerEase;
 
-      // 縦の動きは加速・減速をつけず、最初から最後まで完全に一定速度で落とす。
-      // 以前は画面下端に触れる位置で速度カーブを2段階に切り替えていたが、
-      // その継ぎ目でちょうど下端に触れる瞬間に速度が不連続になり「ぐん」と
-      // 加速したように見えてしまっていたため、単純な線形移動に戻した。
+      // 進行方向の軸は加速・減速をつけず、最初から最後まで完全に一定速度で抜けていく。
+      // 以前は画面端に触れる位置で速度カーブを2段階に切り替えていたが、その継ぎ目で
+      // ちょうど端に触れる瞬間に速度が不連続になり「ぐん」と加速したように見えてしまって
+      // いたため、単純な線形移動に戻した。
       var dispH = ITEM_DISPLAY_HEIGHT * itemScale;
-      var offY = H + dispH / 2 + 40; // 完全に画面外へ抜けきる位置(余裕を持たせる)
-      item.y = item.exitFromY + (offY - item.exitFromY) * et;
+      var itemRatio = itemImgLoaded ? (itemImg.naturalWidth / itemImg.naturalHeight) : 1;
+      var dispW = dispH * itemRatio;
+
+      if (exitSlideDirection === 'up') {
+        item.x = item.exitFromX + (W / 2 - item.exitFromX) * centerEase;
+        var offYUp = -dispH / 2 - 40;
+        item.y = item.exitFromY + (offYUp - item.exitFromY) * et;
+      } else if (exitSlideDirection === 'left') {
+        item.y = item.exitFromY + (getItemRestY() - item.exitFromY) * centerEase;
+        var offXLeft = -dispW / 2 - 40;
+        item.x = item.exitFromX + (offXLeft - item.exitFromX) * et;
+      } else if (exitSlideDirection === 'right') {
+        item.y = item.exitFromY + (getItemRestY() - item.exitFromY) * centerEase;
+        var offXRight = W + dispW / 2 + 40;
+        item.x = item.exitFromX + (offXRight - item.exitFromX) * et;
+      } else {
+        item.x = item.exitFromX + (W / 2 - item.exitFromX) * centerEase;
+        var offY = H + dispH / 2 + 40; // 完全に画面外へ抜けきる位置(余裕を持たせる)
+        item.y = item.exitFromY + (offY - item.exitFromY) * et;
+      }
 
       if (et >= 1) {
         item = null;
