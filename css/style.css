@@ -60,15 +60,27 @@ html, body {
 }
 
 #primeScreen .primeText {
-  font-size: 15px;
-  line-height: 1.9;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.7;
+  max-width: 320px;
 }
 
 #primeScreen .primeSub {
   display: block;
-  margin-top: 12px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  margin-top: 18px;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+#primeScreen .primeModeLabel {
+  display: block;
+  margin-top: 26px;
+  font-size: 17px;
+  font-weight: 600;
+  color: #7dd3fc;
 }
 
 #settingsScreen {

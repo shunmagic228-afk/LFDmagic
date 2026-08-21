@@ -249,7 +249,11 @@
   // ---- 事前準備画面(アプリを開き直すたびに一度だけ表示) ----
   // モーションセンサーの許可ダイアログは毎回避けられないため、本番前に安全なタイミングで
   // 済ませてもらうための画面。ここでのタップで許可を要求し、以降は本番用の操作に戻る。
+  // 設定画面を開かなくても現場でひと目でモードが分かるよう、現在の消え方モードを表示しておく。
+  var EXIT_MODE_DISPLAY_NAME = { slide: '自動スライド', cutout: 'カットアウト', new: 'ノーマル' };
   var primeScreen = document.getElementById('primeScreen');
+  var primeModeValue = document.getElementById('primeModeValue');
+  primeModeValue.textContent = EXIT_MODE_DISPLAY_NAME[exitMode] || exitMode;
   primeScreen.addEventListener('click', function () {
     enableTilt();
     primeScreen.classList.add('hidden');
